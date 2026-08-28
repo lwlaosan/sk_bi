@@ -36,7 +36,7 @@ import java.util.stream.StreamSupport;
 @Service
 public class RuntimeReportService {
     private static final Logger log = LoggerFactory.getLogger(RuntimeReportService.class);
-    private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z0-9_$]{1,128}");
+    private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z0-9_$]{1,128}(\\.[A-Za-z0-9_$]{1,128})?");
     private static final Pattern UNSAFE_SQL = Pattern.compile("(?i)\\b(insert|update|delete|drop|alter|create|grant|revoke|call|outfile|dumpfile|load_file|sleep|benchmark|for\\s+update|lock\\s+in\\s+share)\\b");
     private final ReportRepository reports; private final ReportAccess access; private final ReportRuntimeCache cache;
     private final DatasourceService datasources; private final ProcedureParameterBinder binder;
@@ -74,7 +74,26 @@ public class RuntimeReportService {
             runtimeRoute.put("name", root.path("routeName").asText()); runtimeRoute.put("viewType", root.path("viewType").asText());
             runtimeRoute.set("chartConfig", root.path("chartConfig"));
         });
+        JsonNode insight=config.path("insight");
+        ObjectNode publicInsight=result.putObject("insight");
+        publicInsight.put("enabled",insight.path("enabled").asBoolean(false));
+        publicInsight.put("title",insight.path("title").asText("智能洞察"));
+        publicInsight.put("position",insight.path("position").asText("HEADER"));
         return result;
+    }
+
+    InsightDefinition insightDefinition(String uuid,long version) {
+        Loaded loaded=load(uuid);
+        if(version!=loaded.head().version()) throw new BiException(HttpStatus.CONFLICT,"BI_RUNTIME_CONFIG_STALE","运行配置已更新");
+        JsonNode insight=loaded.snapshot().path("insight");
+        if(!insight.path("enabled").asBoolean(false)) throw new BiException(HttpStatus.NOT_FOUND,"BI_INSIGHT_DISABLED","该报表未启用洞察");
+        Set<String> componentKeys=new java.util.HashSet<>();
+        loaded.snapshot().path("components").forEach(item->componentKeys.add(item.path("componentKey").asText()));
+        return new InsightDefinition(loaded.head().id(),loaded.head().name(),insight.deepCopy(),Set.copyOf(componentKeys));
+    }
+
+    InsightHistoryDefinition insightHistoryDefinition(String uuid) {
+        Loaded loaded=load(uuid);return new InsightHistoryDefinition(loaded.head().id(),loaded.head().name());
     }
 
     public RuntimeDtos.OptionResult options(String uuid, String controlKey) {
@@ -254,7 +273,7 @@ public class RuntimeReportService {
             if (!(parsed instanceof net.sf.jsqlparser.statement.select.Select)) throw new IllegalArgumentException();
         } catch(Exception ex) { throw new BiException(HttpStatus.UNPROCESSABLE_ENTITY,"BI_CONTROL_OPTION_SQL_INVALID","SQL 选项语法不是单条只读 SELECT/CTE"); }
     }
-    private static String callSql(String procedure,int count){return "{call `"+procedure+"`("+String.join(",",java.util.Collections.nCopies(count,"?"))+")}";}
+    private static String callSql(String procedure,int count){return "{call "+procedure+"("+String.join(",",java.util.Collections.nCopies(count,"?"))+")}";}
     private static JsonNode find(JsonNode array,String field,String value,String code,String message){return StreamSupport.stream(array.spliterator(),false).filter(n->value.equals(n.path(field).asText())).findFirst().orElseThrow(()->new BiException(HttpStatus.NOT_FOUND,code,message));}
     private static BiException invalid(String message){return new BiException(HttpStatus.BAD_REQUEST,"BI_REQUEST_INVALID",message);}
     private static BiException queryFailure(SQLException ex) {
@@ -271,4 +290,6 @@ public class RuntimeReportService {
             message.isBlank() ? "查询执行失败" : "查询执行失败：" + message);
     }
     private record Loaded(ReportRepository.RuntimeHead head,ObjectNode snapshot){}
+    record InsightDefinition(long reportId,String reportName,JsonNode config,Set<String> componentKeys){}
+    record InsightHistoryDefinition(long reportId,String reportName){}
 }

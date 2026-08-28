@@ -106,7 +106,7 @@ public class DatasourceService {
     private DatasourceDtos.View view(DatasourceRecord source) {
         Map<SubjectType, List<Long>> acl = repository.acl(source.id());
         boolean admin = access.isAdmin();
-        return new DatasourceDtos.View(String.valueOf(source.id()), source.datasourceName(),
+        return new DatasourceDtos.View(String.valueOf(source.id()), source.datasourceName(), source.databaseType(),
             admin ? source.host() : "******", admin ? source.port() : 0,
             admin ? source.databaseName() : "******", admin ? source.username() : "******",
             admin && source.passwordCiphertext() != null && !source.passwordCiphertext().isBlank(),

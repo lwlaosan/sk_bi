@@ -73,6 +73,7 @@ PUT  /api/bi/admin/datasources/{datasourceId}
 ```json
 {
   "datasourceName": "ERP 生产只读库",
+  "databaseType": "MYSQL",
   "host": "mysql.internal",
   "port": 3306,
   "databaseName": "erp_prod",
@@ -87,6 +88,8 @@ PUT  /api/bi/admin/datasources/{datasourceId}
   "userIds": ["2001"]
 }
 ```
+
+`databaseType` 可取 `MYSQL`、`SQLSERVER`、`POSTGRESQL`。SQL Server/PostgreSQL 可在 `connectionProps.schema` 指定 Schema，未指定时分别使用 `dbo`、`public`。类型持久化到现有 JSON 字段，不需要修改项目元数据库。
 
 允许的 `connectionProps` 使用服务端白名单；禁止客户端覆盖 TLS、超时或执行多语句等安全参数。
 
@@ -163,6 +166,15 @@ GET /api/bi/admin/reports/{reportId}/configuration
 ```
 
 响应为 `ReportDesignConfig`，包含基础信息、ACL、控件、组件、路由、字段、钻取边和参数映射，不包含数据源凭据。
+
+#### 4.3.1 ACL 角色/用户候选项
+
+```http
+GET /api/bi/admin/reports/acl-subjects?type=ROLE&keyword=销售
+GET /api/bi/admin/reports/acl-subjects?type=USER&keyword=zhang
+```
+
+需要 `bi:report:design` 权限。接口最多返回 100 个启用且未删除的候选项，仅包含 `id`、显示名称 `label` 和角色编码/用户账号 `code`，供权限页远程搜索多选使用。
 
 ### 4.4 原子保存完整配置
 
@@ -485,6 +497,39 @@ p_component_key = 路径中的 componentKey
 
 ## 8. 前端核心类型
 
+### 8.1 页面数据洞察
+
+`GET /api/bi/runtime/reports/{uuid}` 的运行配置包含公开入口配置：
+
+```json
+{"insight":{"enabled":true,"title":"经营洞察","position":"HEADER"}}
+```
+
+`position` 支持 `HEADER`（报表头部）、`FLOAT_RIGHT`（右侧悬浮）和 `BOTTOM`（报表底部）。开发者提示词、供应商和模型名不会通过运行配置接口下发。
+
+`POST /api/bi/runtime/reports/{uuid}/insight` 接收当前浏览器页面已查询出的可见字段和数据行：
+
+```json
+{"configVersion":12,"controls":{},"datasets":[{"componentKey":"sales_trend","componentName":"销售趋势","routeName":"根层级","scopeType":"CURRENT","levelPath":["根层级"],"fields":[{"physicalName":"sale_date","displayName":"日期","dataType":"DATE"}],"rows":[{"sale_date":"2026-08-01"}],"rowCount":1,"truncated":false}],"requestId":"uuid"}
+```
+
+`scopeType` 为 `CURRENT` 或 `PARENT`，`levelPath` 是从根层级到该数据集的中文路径。服务端从版本化报表快照读取提示词、供应商、模型、行数与 Token 限制；模型成功返回后必须先保存历史，再返回 `historyId/content/provider/model/generatedAt/inputRows/routeSummary/generatedByName`。浏览器不得提交或覆盖 API Key、提示词、模型或上游地址。
+
+洞察历史接口（需要报表查看权限，并继续执行该报表 ACL）：
+
+- `GET /api/bi/runtime/reports/{uuid}/insights?page=1&pageSize=20`：按生成时间倒序分页。
+- `GET /api/bi/runtime/reports/{uuid}/insights/{historyId}`：返回 Markdown 正文、生成者、模型、报表配置版本、层级摘要和当时发送给模型的数据快照。
+
+历史记录不可修改；每次成功洞察保存一条。前端以 GFM 解析正文，并在写入 DOM 前进行 HTML 清洗。
+
+模型密钥管理接口（需要 `bi:datasource:manage` 权限）：
+
+- `GET /api/bi/admin/insight/providers`：返回供应商、是否配置、来源、脱敏末四位和凭据版本。
+- `PUT /api/bi/admin/insight/providers/{provider}/credential`：请求体为 `{"apiKey":"..."}`，加密保存或替换密钥。
+- `DELETE /api/bi/admin/insight/providers/{provider}/credential`：清除页面保存的密钥；若存在环境变量则自动回退。
+
+任何响应均不得返回完整 API Key，审计日志不得记录请求体。
+
 ```ts
 export type ViewType = 'TABLE' | 'BAR' | 'STACKED_BAR' | 'HORIZONTAL_BAR' | 'LINE' | 'AREA' | 'PIE' | 'DONUT' | 'GAUGE' | 'KPI';
 export type RegionType = 'COMPONENT' | 'TABLE';
@@ -549,6 +594,12 @@ export interface DrillHistoryItem {
 | 500 | `BI_QUERY_FAILED` | 存储过程执行失败，详情仅入服务端日志 |
 | 503 | `BI_DATASOURCE_UNAVAILABLE` | 数据源不可连接或连接池不可用 |
 | 504 | `BI_QUERY_TIMEOUT` | 查询超过配置超时 |
+| 400 | `BI_INSIGHT_REQUEST_INVALID` | 洞察页面数据不合法 |
+| 404 | `BI_INSIGHT_DISABLED` | 报表未启用洞察 |
+| 429 | `BI_INSIGHT_CONCURRENCY_LIMIT` | 洞察调用达到平台并发上限 |
+| 502 | `BI_INSIGHT_UPSTREAM_FAILED` | 模型服务调用失败 |
+| 503 | `BI_INSIGHT_PROVIDER_UNAVAILABLE` | 服务端未配置供应商 API Key |
+| 504 | `BI_INSIGHT_TIMEOUT` | 模型服务响应超时 |
 
 ## 10. 幂等与取消
 

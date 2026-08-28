@@ -55,7 +55,7 @@ flowchart LR
 - 后端：JDK 17、Spring Boot 3、Spring Security、JWT、MyBatis、Redis。
 - 前端：Vue 3、TypeScript、Vite、Pinia、Element Plus。
 - 可视化：Apache ECharts；表格：VXE-Table；Excel：ExcelJS。
-- 数据库：MySQL 8；系统元数据库与业务数据源物理或逻辑分离。
+- 数据库：系统元数据库使用 MySQL 8；报表业务数据源支持 MySQL 8、SQL Server 和 PostgreSQL，二者物理或逻辑分离。
 - 基座：RuoYi-Vue Spring Boot 3 分支配合 Vue3 TypeScript 前端，参考[若依官方版本说明](https://doc.ruoyi.vip/ruoyi-vue/)。
 
 依赖的精确版本应在开始编码时统一锁定，不允许各模块自行选择冲突版本。
@@ -64,10 +64,10 @@ flowchart LR
 
 - 报表 URL 固定为 `/report/view/{uuid}`，UUID 不能替代权限校验。
 - 所有报表必须登录后访问；报表 ACL 同时支持角色和用户。
-- 第一版只支持 MySQL 8、IN 参数和单结果集存储过程。
+- 报表业务数据源支持 MySQL 8、SQL Server 和 PostgreSQL；过程仅支持 IN 参数和单结果集。
 - 配置保存后立即生效，无草稿、发布和审批流程；每次保存自动留存版本。
 - 报表数据不进入 Redis；Redis 仅缓存配置和短期控件选项。
 - 报表至少启用一个区域；组件区域可包含多个组件，表格区域最多一个表格并固定显示在组件区域下方。
 - 组件区域与表格区域分别调用存储过程，结果字段和业务含义可以完全不同；查询控件可选择作用目标。
 - 表格全量取数后由前端分页和排序；默认 50,000 行、60 秒，平台硬上限 200,000 行。
-- 第一版不支持匿名报表、移动端设计、控件级联、服务端分页排序、多结果集、普通 SQL 数据集和 API 数据源。
+- 不支持匿名报表、独立的移动端配置、控件级联、服务端分页排序、多结果集、普通 SQL 数据集和 API 数据源；运行页采用响应式手机布局。

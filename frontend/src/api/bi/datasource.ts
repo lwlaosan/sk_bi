@@ -10,6 +10,7 @@ export interface BiResponse<T> {
 export interface DatasourceView {
   id: string
   datasourceName: string
+  databaseType: DatabaseType
   host: string
   port: number
   databaseName: string
@@ -35,6 +36,7 @@ export interface DatasourcePage {
 
 export interface DatasourceSave {
   datasourceName: string
+  databaseType: DatabaseType
   host: string
   port: number
   databaseName: string
@@ -47,6 +49,8 @@ export interface DatasourceSave {
   userIds: string[]
   expectedRowVersion?: number
 }
+
+export type DatabaseType = 'MYSQL' | 'SQLSERVER' | 'POSTGRESQL'
 
 export interface ProcedureSummary { procedureName: string }
 export interface ProcedureParameter { ordinal: number; name: string; mode: string; mysqlDataType: string; dtdIdentifier: string }

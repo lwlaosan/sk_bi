@@ -11,6 +11,7 @@ public final class DatasourceDtos {
 
     public record SaveRequest(
         @NotBlank @Size(max = 100) String datasourceName,
+        DatabaseType databaseType,
         @NotBlank @Size(max = 255) String host,
         @Min(1) @Max(65535) int port,
         @NotBlank @Pattern(regexp = "[A-Za-z0-9_$-]{1,128}") String databaseName,
@@ -22,9 +23,13 @@ public final class DatasourceDtos {
         List<@Positive Long> roleIds,
         List<@Positive Long> userIds,
         Long expectedRowVersion
-    ) {}
+    ) {
+        public DatabaseType effectiveDatabaseType() {
+            return databaseType == null ? DatabaseType.MYSQL : databaseType;
+        }
+    }
 
-    public record View(String id, String datasourceName, String host, int port, String databaseName,
+    public record View(String id, String datasourceName, DatabaseType databaseType, String host, int port, String databaseName,
                        String username, boolean hasPassword, Map<String, Object> connectionProps,
                        int credentialVersion, DatasourceStatus status, String remark,
                        List<String> roleIds, List<String> userIds,
@@ -37,4 +42,3 @@ public final class DatasourceDtos {
     public record ProcedureMetadata(String procedureName, String signatureHash, boolean supported,
                                     List<ProcedureParameter> parameters, List<String> unsupportedReasons) {}
 }
-

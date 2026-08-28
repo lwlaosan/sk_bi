@@ -11,7 +11,8 @@ import java.util.*;
 
 @Component
 public class JdbcUrlFactory {
-    private static final Set<String> ALLOWED = Set.of("useUnicode", "characterEncoding", "serverTimezone");
+    private static final Set<String> COMMON = Set.of("databaseType", "schema");
+    private static final Set<String> MYSQL = Set.of("useUnicode", "characterEncoding", "serverTimezone");
 
     @Value("${bi.datasource.ssl-enabled:true}")
     private boolean sslEnabled = true;
@@ -26,16 +27,43 @@ public class JdbcUrlFactory {
         }
         TreeMap<String, Object> props = new TreeMap<>();
         if (source.connectionProps() != null) props.putAll(source.connectionProps());
-        if (!ALLOWED.containsAll(props.keySet())) throw invalid("connectionProps 包含不允许的参数");
+        Set<String> allowed = new HashSet<>(COMMON);
+        if (source.databaseType() == DatabaseType.MYSQL) allowed.addAll(MYSQL);
+        if (!allowed.containsAll(props.keySet())) throw invalid("connectionProps 包含不允许的参数");
+        return switch (source.databaseType()) {
+            case MYSQL -> mysql(source, props);
+            case SQLSERVER -> sqlServer(source);
+            case POSTGRESQL -> postgresql(source);
+        };
+    }
+
+    private String mysql(DatasourceRecord source, TreeMap<String, Object> props) {
+        props.keySet().removeAll(COMMON);
         props.put("allowMultiQueries", false);
-        props.put("useSSL", false);
-        props.put("verifyServerCertificate", false && verifyServerCertificate);
+        props.put("useSSL", sslEnabled);
+        props.put("verifyServerCertificate", sslEnabled && verifyServerCertificate);
         props.put("connectTimeout", 5000);
         props.put("socketTimeout", 600000);
         String query = props.entrySet().stream()
             .map(e -> encode(e.getKey()) + "=" + encode(String.valueOf(e.getValue())))
             .reduce((a, b) -> a + "&" + b).orElse("");
-        return "jdbc:mysql://" + host + ":" + source.port() + "/" + source.databaseName() + "?" + query;
+        return "jdbc:mysql://" + source.host() + ":" + source.port() + "/" + source.databaseName() + "?" + query;
+    }
+
+    private String sqlServer(DatasourceRecord source) {
+        return "jdbc:sqlserver://" + source.host() + ":" + source.port()
+            + ";databaseName=" + source.databaseName()
+            + ";encrypt=" + sslEnabled
+            + ";trustServerCertificate=" + !(sslEnabled && verifyServerCertificate)
+            + ";loginTimeout=5;socketTimeout=600000";
+    }
+
+    private String postgresql(DatasourceRecord source) {
+        String sslMode = !sslEnabled ? "disable" : verifyServerCertificate ? "verify-full" : "require";
+        String schema = source.schemaName();
+        return "jdbc:postgresql://" + source.host() + ":" + source.port() + "/" + source.databaseName()
+            + "?connectTimeout=5&socketTimeout=600&sslmode=" + sslMode
+            + (schema == null ? "" : "&currentSchema=" + encode(schema));
     }
 
     private static String encode(String value) { return URLEncoder.encode(value, StandardCharsets.UTF_8); }

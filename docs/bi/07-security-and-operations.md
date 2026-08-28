@@ -94,7 +94,7 @@ allow = isSystemAdmin
 
 - 过程名必须来自已保存配置并与数据库元数据精确匹配。
 - `p_region_key` 根据目标对象固定为 `COMPONENT` 或 `TABLE`，`p_component_key` 根据 URL 中经过配置校验的对象键注入；客户端不能把表格请求伪装成组件区域请求。
-- 生成 `{call schema.procedure(?,...)}` 时，schema 和过程标识符通过 MySQL 标识符引用函数处理，不能使用请求字符串。
+- 生成 `{call schema.procedure(?,...)}` 时，schema 和过程标识符必须通过白名单格式校验并来自已保存配置，不能直接使用请求字符串。
 - 所有值通过 `CallableStatement` 参数绑定。
 - 执行前比较签名哈希，防止过程变更造成参数错位。
 - 设置查询超时、结果行数、连接池超时和只读事务提示。
@@ -205,13 +205,22 @@ bi:
   cache:
     report-ttl-minutes: 30
     invalidation-channel: bi:config:invalidate
+  insight:
+    connect-timeout-seconds: 10
+    request-timeout-seconds: 90
+    max-input-characters: 200000
+    max-concurrency: 4
 ```
 
 敏感配置：
 
 ```text
 BI_DATASOURCE_MASTER_KEY=<base64-encoded-256-bit-key>
+DASHSCOPE_API_KEY=<qwen-api-key>
+DEEPSEEK_API_KEY=<deepseek-api-key>
 ```
+
+千问与 DeepSeek 密钥可以由服务端环境变量注入，也可以由具有 `bi:datasource:manage` 权限的管理员在设计页配置。页面配置的密钥使用 `BI_DATASOURCE_MASTER_KEY` 执行 AES-256-GCM 加密后保存，接口只返回状态和末四位；数据库配置优先于环境变量。报表快照只保存供应商、模型名称、提示词和入口位置；运行配置接口不返回开发者提示词。发送给模型的数据限定为当前页面的可见字段，并执行组件、字段、行数、字符数、超时与并发限制。成功洞察连同控件值、当前层/上层路径及数据快照保存为不可变历史；历史读取继续执行报表 ACL。该快照属于业务数据，必须纳入元数据库备份、访问审计和数据保留策略。服务端日志只记录历史 ID、供应商、模型、行数和耗时，不记录密钥、提示词、页面数据或洞察正文。
 
 生产环境启动时若缺少或不符合长度，应用必须失败启动，不能使用代码内默认密钥。
 

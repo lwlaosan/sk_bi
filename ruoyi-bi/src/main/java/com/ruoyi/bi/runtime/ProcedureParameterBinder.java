@@ -68,11 +68,11 @@ public class ProcedureParameterBinder {
             if (raw == null || raw.isNull() || raw.isMissingNode()
                     || (!preserveBlank && raw.isTextual() && raw.asText().isBlank()))
                 return new BoundParameter(ordinal, jdbcType(normalized), null);
-            if (normalized.equals("json")) return new BoundParameter(ordinal, Types.LONGVARCHAR, mapper.writeValueAsString(raw));
+            if (normalized.equals("json") || normalized.equals("jsonb")) return new BoundParameter(ordinal, Types.LONGVARCHAR, mapper.writeValueAsString(raw));
             if (normalized.equals("date")) return new BoundParameter(ordinal, Types.DATE, LocalDate.parse(raw.asText()));
-            if (normalized.contains("datetime") || normalized.contains("timestamp")) return new BoundParameter(ordinal, Types.TIMESTAMP, LocalDateTime.parse(raw.asText()));
-            if (normalized.matches("tinyint|smallint|mediumint|int|integer|bigint")) return new BoundParameter(ordinal, Types.BIGINT, raw.longValue());
-            if (normalized.matches("decimal|numeric|float|double|real")) return new BoundParameter(ordinal, Types.DECIMAL, new BigDecimal(raw.asText()));
+            if (normalized.contains("datetime") || normalized.contains("timestamp") || normalized.equals("timestamptz")) return new BoundParameter(ordinal, Types.TIMESTAMP, LocalDateTime.parse(raw.asText()));
+            if (normalized.matches("tinyint|smallint|mediumint|int|int2|int4|int8|integer|bigint|serial|bigserial")) return new BoundParameter(ordinal, Types.BIGINT, raw.longValue());
+            if (normalized.matches("decimal|numeric|money|smallmoney|float|float4|float8|double|real")) return new BoundParameter(ordinal, Types.DECIMAL, new BigDecimal(raw.asText()));
             if (normalized.equals("boolean") || normalized.equals("bool") || normalized.equals("bit")) return new BoundParameter(ordinal, Types.BOOLEAN, raw.asBoolean());
             return new BoundParameter(ordinal, Types.VARCHAR, raw.isValueNode() ? raw.asText() : mapper.writeValueAsString(raw));
         } catch (Exception ex) { throw invalid("参数 " + ordinal + " 类型转换失败"); }
@@ -80,11 +80,11 @@ public class ProcedureParameterBinder {
 
     private static int jdbcType(String type) {
         if (type.equals("date")) return Types.DATE;
-        if (type.contains("datetime") || type.contains("timestamp")) return Types.TIMESTAMP;
-        if (type.matches("tinyint|smallint|mediumint|int|integer|bigint")) return Types.BIGINT;
-        if (type.matches("decimal|numeric|float|double|real")) return Types.DECIMAL;
+        if (type.contains("datetime") || type.contains("timestamp") || type.equals("timestamptz")) return Types.TIMESTAMP;
+        if (type.matches("tinyint|smallint|mediumint|int|int2|int4|int8|integer|bigint|serial|bigserial")) return Types.BIGINT;
+        if (type.matches("decimal|numeric|money|smallmoney|float|float4|float8|double|real")) return Types.DECIMAL;
         if (type.equals("boolean") || type.equals("bool") || type.equals("bit")) return Types.BOOLEAN;
-        if (type.equals("json")) return Types.LONGVARCHAR;
+        if (type.equals("json") || type.equals("jsonb")) return Types.LONGVARCHAR;
         return Types.VARCHAR;
     }
     private static BiException invalid(String message) { return new BiException(HttpStatus.BAD_REQUEST, "BI_REQUEST_INVALID", message); }

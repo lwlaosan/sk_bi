@@ -28,7 +28,27 @@ public class ReportConfigValidator {
         validateComponents(config.path("components"), errors);
         validateControls(config.path("controls"), config.path("components"), errors);
         validateMappings(config.path("parameterMappings"), config.path("controls"), config.path("components"), errors);
+        validateInsight(config.path("insight"), errors);
         return new ReportDtos.ValidationResult(errors.isEmpty(), List.copyOf(errors), List.of());
+    }
+
+    private void validateInsight(JsonNode insight, List<ReportDtos.ValidationIssue> errors) {
+        if (insight.isMissingNode() || insight.isNull()) return;
+        if (!insight.isObject()) { errors.add(issue("insight", "INSIGHT_INVALID", "洞察配置必须是对象")); return; }
+        if (!insight.path("enabled").asBoolean(false)) return;
+        if (!Set.of("QWEN", "DEEPSEEK").contains(insight.path("provider").asText()))
+            errors.add(issue("insight.provider", "INSIGHT_PROVIDER_INVALID", "洞察模型供应商不合法"));
+        String model=insight.path("model").asText(), prompt=insight.path("prompt").asText(), title=insight.path("title").asText();
+        if (model.isBlank() || model.length()>100) errors.add(issue("insight.model", "INSIGHT_MODEL_INVALID", "模型名称不能为空且不能超过100字"));
+        if (prompt.isBlank() || prompt.length()>8000) errors.add(issue("insight.prompt", "INSIGHT_PROMPT_INVALID", "开发者提示词不能为空且不能超过8000字"));
+        if (title.isBlank() || title.length()>50) errors.add(issue("insight.title", "INSIGHT_TITLE_INVALID", "洞察标题不能为空且不能超过50字"));
+        if (!Set.of("HEADER", "FLOAT_RIGHT", "BOTTOM").contains(insight.path("position").asText()))
+            errors.add(issue("insight.position", "INSIGHT_POSITION_INVALID", "洞察入口位置不合法"));
+        int rows=insight.path("maxRowsPerComponent").asInt(-1), tokens=insight.path("maxTokens").asInt(-1);
+        double temperature=insight.path("temperature").asDouble(-1);
+        if(rows<1||rows>200) errors.add(issue("insight.maxRowsPerComponent","INSIGHT_LIMIT_INVALID","每组件数据行数必须在1到200之间"));
+        if(tokens<128||tokens>8192) errors.add(issue("insight.maxTokens","INSIGHT_LIMIT_INVALID","最大输出 Token 必须在128到8192之间"));
+        if(temperature<0||temperature>2) errors.add(issue("insight.temperature","INSIGHT_TEMPERATURE_INVALID","温度必须在0到2之间"));
     }
 
     private void validateControls(JsonNode controls, JsonNode components, List<ReportDtos.ValidationIssue> errors) {
@@ -48,7 +68,9 @@ public class ReportConfigValidator {
             if ("STATIC".equals(source)) validateStaticOptions(control.path("options"), path, errors);
             if ("SQL".equals(source)) {
                 if (control.path("optionDatasourceId").asLong(0) <= 0) errors.add(issue(path + ".optionDatasourceId", "DATASOURCE_REQUIRED", "SQL 选项必须指定数据源"));
-                if (!safeSelect(control.path("optionSql").asText())) errors.add(issue(path + ".optionSql", "OPTION_SQL_UNSAFE", "SQL 选项只允许单条只读 SELECT/CTE"));
+                String optionSql = control.path("optionSql").asText();
+                String sqlIssue = optionSqlIssue(optionSql);
+                if (sqlIssue != null) errors.add(issue(path + ".optionSql", "OPTION_SQL_UNSAFE", sqlIssue));
             }
             for (JsonNode target : control.path("targetComponentKeys")) if (!componentKeys.contains(target.asText())) errors.add(issue(path + ".targetComponentKeys", "COMPONENT_NOT_FOUND", "控件目标组件不存在"));
         }
@@ -97,14 +119,27 @@ public class ReportConfigValidator {
         }
     }
 
-    private static boolean safeSelect(String sql) {
-        if (sql == null) return false;
+    private static String optionSqlIssue(String sql) {
+        if (sql == null || sql.isBlank()) return "请填写选项 SQL，且必须返回 value、label 两列";
         String normalized = sql.trim().toLowerCase(java.util.Locale.ROOT);
-        if (!(normalized.startsWith("select ") || normalized.startsWith("with "))) return false;
-        if (normalized.contains(";") || normalized.contains("--") || normalized.contains("/*")) return false;
-        if (java.util.regex.Pattern.compile("\\b(insert|update|delete|drop|alter|create|grant|revoke|call|outfile|dumpfile|for\\s+update|lock\\s+in\\s+share)\\b").matcher(normalized).find()) return false;
-        try { return net.sf.jsqlparser.parser.CCJSqlParserUtil.parse(sql.replace(":currentUserId","?")) instanceof net.sf.jsqlparser.statement.select.Select; }
-        catch (Exception ex) { return false; }
+        if (!(normalized.startsWith("select ") || normalized.startsWith("with "))) return "SQL 选项必须以 SELECT 或 WITH 开头";
+        if (normalized.contains(";")) return "SQL 选项不能包含分号，请去掉末尾 ;";
+        if (normalized.contains("--") || normalized.contains("/*")) return "SQL 选项不能包含注释";
+        if (java.util.regex.Pattern.compile("\\b(insert|update|delete|drop|alter|create|grant|revoke|call|outfile|dumpfile|for\\s+update|lock\\s+in\\s+share)\\b").matcher(normalized).find()) {
+            return "SQL 选项只允许单条只读 SELECT/CTE";
+        }
+        try {
+            if (!(net.sf.jsqlparser.parser.CCJSqlParserUtil.parse(sql.replace(":currentUserId", "?")) instanceof net.sf.jsqlparser.statement.select.Select)) {
+                return "SQL 选项只允许单条只读 SELECT/CTE";
+            }
+            return null;
+        } catch (Exception ex) {
+            return "SQL 选项语法无效，请检查是否写了分号或非法语句";
+        }
+    }
+
+    private static boolean safeSelect(String sql) {
+        return optionSqlIssue(sql) == null;
     }
 
     private void validateComponents(JsonNode components, List<ReportDtos.ValidationIssue> errors) {

@@ -3,6 +3,7 @@ package com.ruoyi.bi.report;
 import com.ruoyi.bi.api.ApiResponse;
 import com.ruoyi.bi.api.TraceIdFilter;
 import com.ruoyi.bi.security.CurrentUser;
+import com.ruoyi.bi.datasource.SubjectType;
 import com.ruoyi.common.annotation.Log;
 import com.ruoyi.common.enums.BusinessType;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,9 +25,18 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 public class ReportController {
     private final ReportService service;
     private final CurrentUser currentUser;
+    private final AclDirectoryService aclDirectory;
 
-    public ReportController(ReportService service, CurrentUser currentUser) {
-        this.service = service; this.currentUser = currentUser;
+    public ReportController(ReportService service, CurrentUser currentUser, AclDirectoryService aclDirectory) {
+        this.service = service; this.currentUser = currentUser; this.aclDirectory = aclDirectory;
+    }
+
+    @GetMapping("/acl-subjects")
+    @PreAuthorize("@ss.hasPermi('bi:report:design')")
+    ApiResponse<?> aclSubjects(@RequestParam SubjectType type,
+                               @RequestParam(required = false) String keyword,
+                               HttpServletRequest request) {
+        return ApiResponse.ok(aclDirectory.search(type, keyword), TraceIdFilter.current(request));
     }
 
     @GetMapping

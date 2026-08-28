@@ -167,5 +167,18 @@ bi:
     invalidation-channel: bi:config:invalidate
   datasource:
     master-key: ${BI_DATASOURCE_MASTER_KEY:}
+    ssl-enabled: ${BI_DATASOURCE_SSL_ENABLED:false}
+    verify-server-certificate: ${BI_DATASOURCE_VERIFY_CERTIFICATE:false}
     connection-timeout-ms: 5000
     validation-timeout-ms: 10000
+  insight:
+    qwen:
+      api-key: ${DASHSCOPE_API_KEY:}
+      endpoint: ${BI_QWEN_ENDPOINT:https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}
+    deepseek:
+      api-key: ${DEEPSEEK_API_KEY:}
+      endpoint: ${BI_DEEPSEEK_ENDPOINT:https://api.deepseek.com/chat/completions}
+    connect-timeout-seconds: 10
+    request-timeout-seconds: 90
+    max-input-characters: 200000
+    max-concurrency: 4

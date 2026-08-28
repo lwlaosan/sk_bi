@@ -38,6 +38,7 @@ export interface ReportComponent { componentKey: string; componentName: string; 
 export interface ControlOption { value: string; label: string; displayOrder: number; enabled: boolean }
 export interface ReportControl { controlKey: string; label: string; controlType: string; required: boolean; displayOrder: number; optionSource: string; optionDatasourceId?: string; optionSql?: string; options: ControlOption[]; targetComponentKeys: string[]; defaultValue?: Record<string, unknown>; config?: Record<string, unknown> }
 export interface ParameterMapping { componentKey?: string; datasourceId: string; procedureName: string; signatureHash: string; parameterOrdinal: number; parameterName: string; mysqlDataType: string; parameterMode: string; sourceType: string; sourceKey?: string; constantValue?: string }
+export interface ReportInsight { enabled:boolean; title:string; position:'HEADER'|'FLOAT_RIGHT'|'BOTTOM'; provider:'QWEN'|'DEEPSEEK'; model:string; prompt:string; maxRowsPerComponent:number; maxTokens:number; temperature:number }
 export interface ReportConfiguration {
   reportId: string
   reportUuid: string
@@ -51,14 +52,21 @@ export interface ReportConfiguration {
   controls: ReportControl[]
   components: ReportComponent[]
   parameterMappings: ParameterMapping[]
+  insight?: ReportInsight
 }
 export interface VersionSummary { versionNo: number; operationType: string; sourceVersion?: number; changeSummary?: string; createdBy: string; createdAt: string }
 export interface VersionPage { items: VersionSummary[]; page: number; pageSize: number; total: number }
 export interface VersionDiffItem { path: string; before?: unknown; after?: unknown }
 export interface VersionDiff { fromVersion: number; toVersion: number; changes: VersionDiffItem[] }
+export interface AclSubjectOption { id: string; label: string; code: string }
+export interface InsightProviderStatus { provider:'QWEN'|'DEEPSEEK'; label:string; configured:boolean; source:'DATABASE'|'ENVIRONMENT'|'NONE'; maskedKey:string; credentialVersion:number; updatedAt?:string }
 
 export function listReports(params: Record<string, unknown>): Promise<BiResponse<ReportPage>> {
   return request({ url: '/api/bi/admin/reports', method: 'get', params })
+}
+
+export function listAclSubjects(type: 'ROLE' | 'USER', keyword = ''): Promise<BiResponse<AclSubjectOption[]>> {
+  return request({ url: '/api/bi/admin/reports/acl-subjects', method: 'get', params: { type, keyword } })
 }
 
 export function createReport(data: ReportCreate): Promise<BiResponse<ReportCreated>> {
@@ -92,3 +100,6 @@ export function diffReportVersion(id: string, versionNo: number, against: number
 export function rollbackReportVersion(id: string, versionNo: number, expectedVersion: number, changeSummary: string): Promise<BiResponse<{ configVersion: number }>> {
   return request({ url: `/api/bi/admin/reports/${id}/versions/${versionNo}/rollback`, method: 'post', data: { expectedVersion, changeSummary } })
 }
+export function listInsightProviders():Promise<BiResponse<InsightProviderStatus[]>> { return request({url:'/api/bi/admin/insight/providers',method:'get'}) }
+export function saveInsightProviderKey(provider:'QWEN'|'DEEPSEEK',apiKey:string):Promise<BiResponse<InsightProviderStatus>> { return request({url:`/api/bi/admin/insight/providers/${provider}/credential`,method:'put',data:{apiKey}}) }
+export function deleteInsightProviderKey(provider:'QWEN'|'DEEPSEEK'):Promise<BiResponse<void>> { return request({url:`/api/bi/admin/insight/providers/${provider}/credential`,method:'delete'}) }

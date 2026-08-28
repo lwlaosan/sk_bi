@@ -24,6 +24,9 @@
 
     <el-table v-loading="loading" :data="rows">
       <el-table-column label="名称" prop="datasourceName" min-width="150" />
+      <el-table-column label="类型" width="110">
+        <template #default="{ row }">{{ databaseTypeLabel(row.databaseType) }}</template>
+      </el-table-column>
       <el-table-column label="主机" min-width="180">
         <template #default="{ row }">{{ connectionLabel(row) }}</template>
       </el-table-column>
@@ -49,15 +52,17 @@
 
     <pagination v-show="total > 0" :total="total" v-model:page="query.page" v-model:limit="query.pageSize" @pagination="load" />
 
-    <el-dialog v-model="editorOpen" :title="editingId ? '修改数据源' : '新增数据源'" width="680px" append-to-body>
+    <el-dialog v-model="editorOpen" :title="editingId ? '修改数据源' : '新增数据源'" width="760px" append-to-body>
       <el-alert type="warning" :closable="false" show-icon class="mb16"
         title="密码只在提交时使用，保存后不会返回；留空表示不修改已有密码。" />
       <el-form ref="editorRef" :model="form" :rules="rules" label-width="110px">
         <el-row :gutter="16">
           <el-col :span="12"><el-form-item label="名称" prop="datasourceName"><el-input v-model="form.datasourceName" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="状态" prop="status"><el-radio-group v-model="form.status"><el-radio value="ENABLED">启用</el-radio><el-radio value="DISABLED">停用</el-radio></el-radio-group></el-form-item></el-col>
-          <el-col :span="16"><el-form-item label="主机" prop="host"><el-input v-model="form.host" placeholder="mysql.internal" /></el-form-item></el-col>
-          <el-col :span="8"><el-form-item label="端口" prop="port"><el-input-number v-model="form.port" :min="1" :max="65535" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="数据库类型" prop="databaseType"><el-select v-model="form.databaseType" style="width:100%" @change="onDatabaseTypeChange"><el-option label="MySQL" value="MYSQL" /><el-option label="SQL Server" value="SQLSERVER" /><el-option label="PostgreSQL" value="POSTGRESQL" /></el-select></el-form-item></el-col>
+          <el-col :span="12" v-if="form.databaseType !== 'MYSQL'"><el-form-item label="Schema"><el-input v-model="form.connectionProps.schema" :placeholder="form.databaseType === 'SQLSERVER' ? 'dbo' : 'public'" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="主机" prop="host"><el-input v-model="form.host" :placeholder="hostPlaceholder" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="端口" prop="port"><el-input-number v-model="form.port" :min="1" :max="65535" style="width:100%" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="数据库" prop="databaseName"><el-input v-model="form.databaseName" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="用户名" prop="username"><el-input v-model="form.username" /></el-form-item></el-col>
           <el-col :span="24"><el-form-item label="密码" :prop="editingId ? undefined : 'password'"><el-input v-model="form.password" type="password" show-password autocomplete="new-password" /></el-form-item></el-col>
@@ -101,12 +106,13 @@ const roleIdsText = ref('')
 const userIdsText = ref('')
 
 const blankForm = (): DatasourceSave => ({
-  datasourceName: '', host: '', port: 3306, databaseName: '', username: '', password: '',
+  datasourceName: '', databaseType: 'MYSQL', host: '', port: 3306, databaseName: '', username: '', password: '',
   connectionProps: { useUnicode: true, characterEncoding: 'utf8' }, status: 'ENABLED', remark: '', roleIds: [], userIds: []
 })
 const form = reactive<DatasourceSave>(blankForm())
 const rules = {
   datasourceName: [{ required: true, message: '请输入数据源名称', trigger: 'blur' }],
+  databaseType: [{ required: true, message: '请选择数据库类型', trigger: 'change' }],
   host: [{ required: true, message: '请输入主机', trigger: 'blur' }],
   databaseName: [{ required: true, message: '请输入数据库名', trigger: 'blur' }],
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
@@ -134,6 +140,14 @@ function resetSearch() { query.keyword = ''; query.status = ''; handleSearch() }
 function assignForm(value: DatasourceSave) { Object.assign(form, blankForm(), value) }
 function parseIds(value: string) { return value.split(',').map(item => item.trim()).filter(item => /^\d+$/.test(item)) }
 function connectionLabel(row: DatasourceView) { return row.port > 0 ? `${row.host}:${row.port}` : '已隐藏' }
+function databaseTypeLabel(value: DatasourceView['databaseType']) { return { MYSQL: 'MySQL', SQLSERVER: 'SQL Server', POSTGRESQL: 'PostgreSQL' }[value] || value }
+const hostPlaceholder = computed(() => ({ MYSQL: 'mysql.internal', SQLSERVER: 'sqlserver.internal', POSTGRESQL: 'postgres.internal' }[form.databaseType]))
+function onDatabaseTypeChange(value: DatasourceSave['databaseType']) {
+  form.port = { MYSQL: 3306, SQLSERVER: 1433, POSTGRESQL: 5432 }[value]
+  form.connectionProps = value === 'MYSQL'
+    ? { useUnicode: true, characterEncoding: 'utf8' }
+    : { schema: value === 'SQLSERVER' ? 'dbo' : 'public' }
+}
 
 function openCreate() {
   editingId.value = undefined

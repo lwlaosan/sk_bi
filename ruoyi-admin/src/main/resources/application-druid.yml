@@ -6,8 +6,8 @@ spring:
         druid:
             # 主库数据源
             master:
-                url: ${BI_META_DB_URL:jdbc:mysql://192.168.22.210:3306/sk_bi_meta?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=GMT%2B8}
-                username: ${BI_META_DB_USERNAME:jbp}
+                url: ${BI_META_DB_URL:jdbc:mysql://127.0.0.1:3306/sk_bi_meta?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=GMT%2B8}
+                username: ${BI_META_DB_USERNAME:sk_bi}
                 password: ${BI_META_DB_PASSWORD:}
             # 从库数据源
             slave:
@@ -47,8 +47,8 @@ spring:
                 allow:
                 url-pattern: /druid/*
                 # 控制台管理用户名和密码
-                login-username: ruoyi
-                login-password: 123456
+                login-username: ${DRUID_MONITOR_USERNAME:admin}
+                login-password: ${DRUID_MONITOR_PASSWORD:}
             filter:
                 stat:
                     enabled: true

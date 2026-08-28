@@ -78,4 +78,17 @@ class ReportConfigValidatorTest {
         assertFalse(result.valid());
         assertTrue(result.errors().stream().anyMatch(issue -> "SYSTEM_PARAMETER_REQUIRED".equals(issue.code())));
     }
+
+    @Test
+    void validatesEnabledInsightAndPosition() throws Exception {
+        var config=mapper.readTree("""
+            {"baseInfo":{"reportName":"销售分析","status":"DISABLED","defaultDatasourceId":"1","defaultProcedureName":"sp_sales","maxRows":50000,"timeoutSeconds":60},
+             "acl":{"roleIds":[],"userIds":[]},"controls":[],"parameterMappings":[],
+             "components":[{"componentKey":"main_table","regionType":"TABLE","routes":[{"routeCode":"ROOT","viewType":"TABLE","fields":[],"drillEdges":[]}]}],
+             "insight":{"enabled":true,"title":"经营洞察","position":"FLOAT_RIGHT","provider":"QWEN","model":"qwen-plus","prompt":"分析趋势和异常","maxRowsPerComponent":50,"maxTokens":2048,"temperature":0.2}}
+            """);
+        assertTrue(validator.validate(config).valid());
+        ((com.fasterxml.jackson.databind.node.ObjectNode)config.path("insight")).put("position","UNKNOWN");
+        assertTrue(validator.validate(config).errors().stream().anyMatch(issue->"INSIGHT_POSITION_INVALID".equals(issue.code())));
+    }
 }

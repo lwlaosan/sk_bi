@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -20,8 +21,8 @@ import java.nio.charset.StandardCharsets;
 @RestController
 @RequestMapping("/api/bi/runtime/reports")
 public class RuntimeReportController {
-    private final RuntimeReportService service; private final ExcelExportService exports;
-    public RuntimeReportController(RuntimeReportService service,ExcelExportService exports){this.service=service;this.exports=exports;}
+    private final RuntimeReportService service; private final ExcelExportService exports; private final InsightService insights;
+    public RuntimeReportController(RuntimeReportService service,ExcelExportService exports,InsightService insights){this.service=service;this.exports=exports;this.insights=insights;}
 
     @GetMapping("/{uuid}")
     @PreAuthorize("@ss.hasPermi('bi:report:view')")
@@ -32,6 +33,20 @@ public class RuntimeReportController {
     @PostMapping("/{uuid}/components/{componentKey}/query")
     @PreAuthorize("@ss.hasPermi('bi:report:view')")
     ApiResponse<RuntimeDtos.QueryResult> query(@PathVariable String uuid,@PathVariable String componentKey,@Valid @RequestBody RuntimeDtos.QueryRequest body,HttpServletRequest request){return ApiResponse.ok(service.query(uuid,componentKey,body,TraceIdFilter.current(request)),TraceIdFilter.current(request));}
+    @PostMapping("/{uuid}/insight")
+    @PreAuthorize("@ss.hasPermi('bi:report:view')")
+    ApiResponse<RuntimeDtos.InsightResult> insight(@PathVariable String uuid,@Valid @RequestBody RuntimeDtos.InsightRequest body,HttpServletRequest request){return ApiResponse.ok(insights.generate(uuid,body),TraceIdFilter.current(request));}
+    @GetMapping("/{uuid}/insights")
+    @PreAuthorize("@ss.hasPermi('bi:report:view')")
+    ApiResponse<RuntimeDtos.InsightHistoryPage> insightHistory(@PathVariable String uuid,
+        @RequestParam(defaultValue="1") int page,@RequestParam(defaultValue="20") int pageSize,HttpServletRequest request){
+        return ApiResponse.ok(insights.history(uuid,page,pageSize),TraceIdFilter.current(request));
+    }
+    @GetMapping("/{uuid}/insights/{historyId}")
+    @PreAuthorize("@ss.hasPermi('bi:report:view')")
+    ApiResponse<RuntimeDtos.InsightHistoryDetail> insightHistoryDetail(@PathVariable String uuid,@PathVariable long historyId,HttpServletRequest request){
+        return ApiResponse.ok(insights.historyDetail(uuid,historyId),TraceIdFilter.current(request));
+    }
 
     @PostMapping("/{uuid}/components/{componentKey}/export")
     @PreAuthorize("@ss.hasPermi('bi:report:export')")

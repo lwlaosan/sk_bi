@@ -87,7 +87,7 @@ public class DatasourceRepository {
                   connection_props,credential_version,status,remark,created_by,updated_by)
                 VALUES(?,?,?,?,?,?,?,?,1,?,?,?,?)
                 """, id, request.datasourceName(), request.host(), request.port(), request.databaseName(),
-                request.username(), ciphertext, toJson(request.connectionProps()), request.status().name(),
+                request.username(), ciphertext, toJson(connectionProps(request)), request.status().name(),
                 request.remark(), userId, userId);
             replaceAcl(id, request.roleIds(), request.userIds(), userId);
             return id;
@@ -104,7 +104,7 @@ public class DatasourceRepository {
             + passwordSql + " WHERE id=? AND deleted=0" + (expected >= 0 ? " AND row_version=?" : "");
         List<Object> args = new ArrayList<>();
         args.add(request.datasourceName()); args.add(request.host()); args.add(request.port());
-        args.add(request.databaseName()); args.add(request.username()); args.add(toJson(request.connectionProps()));
+        args.add(request.databaseName()); args.add(request.username()); args.add(toJson(connectionProps(request)));
         args.add(request.status().name()); args.add(request.remark()); args.add(userId);
         if (passwordChanged) args.add(ciphertext);
         args.add(id); if (expected >= 0) args.add(expected);
@@ -158,5 +158,12 @@ public class DatasourceRepository {
     private String toJson(Map<String, Object> value) {
         try { return mapper.writeValueAsString(value == null ? Map.of() : value); }
         catch (Exception ex) { throw new BiException(HttpStatus.BAD_REQUEST, "BI_REQUEST_INVALID", "connectionProps 无法序列化"); }
+    }
+
+    private Map<String, Object> connectionProps(DatasourceDtos.SaveRequest request) {
+        Map<String, Object> props = new LinkedHashMap<>();
+        if (request.connectionProps() != null) props.putAll(request.connectionProps());
+        props.put("databaseType", request.effectiveDatabaseType().name());
+        return props;
     }
 }
