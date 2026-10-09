@@ -1,0 +1,37 @@
+spring:
+  devtools:
+    restart:
+      enabled: false
+  datasource:
+    druid:
+      master:
+        url: ${BI_META_DB_URL}
+        username: ${BI_META_DB_USERNAME}
+        password: ${BI_META_DB_PASSWORD}
+      statViewServlet:
+        enabled: false
+  data:
+    redis:
+      host: ${BI_REDIS_HOST}
+      port: ${BI_REDIS_PORT:6379}
+      password: ${BI_REDIS_PASSWORD}
+
+token:
+  secret: ${JWT_SECRET}
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+logging:
+  level:
+    com.ruoyi: info
+    org.springframework: warn
+
+bi:
+  datasource:
+    master-key: ${BI_DATASOURCE_MASTER_KEY}
+    ssl-enabled: true
+    verify-server-certificate: true

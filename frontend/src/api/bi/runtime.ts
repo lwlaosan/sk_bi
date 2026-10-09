@@ -18,9 +18,10 @@ export interface InsightResult { historyId:string; requestId:string; content:str
 export interface InsightHistorySummary { id:string; provider:string; model:string; routeSummary:string; inputRows:number; generatedBy:string; generatedAt:string }
 export interface InsightHistoryDetail { id:string; configVersion:number; requestId:string; provider:string; model:string; content:string; contextSnapshot:Record<string,unknown>; routeSummary:string; inputRows:number; generatedBy:string; generatedAt:string }
 export interface InsightHistoryPage { items:InsightHistorySummary[]; page:number; pageSize:number; total:number }
-export const getRuntimeConfig=(uuid:string):Promise<BiResponse<RuntimeConfig>>=>request({url:`/api/bi/runtime/reports/${uuid}`,method:'get'})
-export const getControlOptions=(uuid:string,key:string):Promise<BiResponse<OptionResult>>=>request({url:`/api/bi/runtime/reports/${uuid}/controls/${key}/options`,method:'get'})
-export const queryComponent=(uuid:string,key:string,data:QueryRequest):Promise<BiResponse<QueryResult>>=>request({url:`/api/bi/runtime/reports/${uuid}/components/${key}/query`,method:'post',data})
+const reportUrl=(uuid:string,preview:boolean)=>`${preview?'/api/bi/admin/report-previews':'/api/bi/runtime/reports'}/${uuid}`
+export const getRuntimeConfig=(uuid:string,preview=false):Promise<BiResponse<RuntimeConfig>>=>request({url:reportUrl(uuid,preview),method:'get'})
+export const getControlOptions=(uuid:string,key:string,preview=false):Promise<BiResponse<OptionResult>>=>request({url:`${reportUrl(uuid,preview)}/controls/${key}/options`,method:'get'})
+export const queryComponent=(uuid:string,key:string,data:QueryRequest,preview=false):Promise<BiResponse<QueryResult>>=>request({url:`${reportUrl(uuid,preview)}/components/${key}/query`,method:'post',data})
 export const exportComponent=(uuid:string,key:string,data:QueryRequest):Promise<Blob>=>request({url:`/api/bi/runtime/reports/${uuid}/components/${key}/export`,method:'post',data,responseType:'blob'}) as unknown as Promise<Blob>
 export const exportReport=(uuid:string,data:QueryRequest):Promise<Blob>=>request({url:`/api/bi/runtime/reports/${uuid}/export`,method:'post',data,responseType:'blob'}) as unknown as Promise<Blob>
 // 大模型生成时间通常高于普通业务接口；略高于服务端 90 秒上限，确保错误由服务端按明确错误码返回。

@@ -91,7 +91,7 @@
 import { ElMessage } from 'element-plus'
 import {
   createDatasource, getDatasource, listDatasources, listProcedures, testDatasource, updateDatasource,
-  type DatasourceSave, type DatasourceView, type ProcedureSummary
+  type DatabaseType, type DatasourceSave, type DatasourceView, type ProcedureSummary
 } from '@/api/bi/datasource'
 
 const loading = ref(false)
@@ -140,10 +140,14 @@ function resetSearch() { query.keyword = ''; query.status = ''; handleSearch() }
 function assignForm(value: DatasourceSave) { Object.assign(form, blankForm(), value) }
 function parseIds(value: string) { return value.split(',').map(item => item.trim()).filter(item => /^\d+$/.test(item)) }
 function connectionLabel(row: DatasourceView) { return row.port > 0 ? `${row.host}:${row.port}` : '已隐藏' }
-function databaseTypeLabel(value: DatasourceView['databaseType']) { return { MYSQL: 'MySQL', SQLSERVER: 'SQL Server', POSTGRESQL: 'PostgreSQL' }[value] || value }
-const hostPlaceholder = computed(() => ({ MYSQL: 'mysql.internal', SQLSERVER: 'sqlserver.internal', POSTGRESQL: 'postgres.internal' }[form.databaseType]))
+const databaseTypeLabels: Record<DatasourceView['databaseType'], string> = { MYSQL: 'MySQL', SQLSERVER: 'SQL Server', POSTGRESQL: 'PostgreSQL' }
+const databaseHostPlaceholders: Record<DatasourceSave['databaseType'], string> = { MYSQL: 'mysql.internal', SQLSERVER: 'sqlserver.internal', POSTGRESQL: 'postgres.internal' }
+const databaseDefaultPorts: Record<DatasourceSave['databaseType'], number> = { MYSQL: 3306, SQLSERVER: 1433, POSTGRESQL: 5432 }
+function databaseTypeLabel(value: DatasourceView['databaseType']) { return databaseTypeLabels[value] }
+function databaseHostPlaceholder(value: unknown) { return databaseHostPlaceholders[String(value) as DatabaseType] }
+const hostPlaceholder = computed(() => databaseHostPlaceholder(form.databaseType))
 function onDatabaseTypeChange(value: DatasourceSave['databaseType']) {
-  form.port = { MYSQL: 3306, SQLSERVER: 1433, POSTGRESQL: 5432 }[value]
+  form.port = databaseDefaultPorts[value]
   form.connectionProps = value === 'MYSQL'
     ? { useUnicode: true, characterEncoding: 'utf8' }
     : { schema: value === 'SQLSERVER' ? 'dbo' : 'public' }

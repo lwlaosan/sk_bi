@@ -194,5 +194,8 @@ public class ReportService {
         if (repository.defaultMappingCount(reportId) != metadata.parameters().size()) {
             throw new BiException(HttpStatus.BAD_REQUEST, "BI_CONFIG_INVALID", "默认存储过程参数映射尚未配置完整");
         }
+        if (repository.routesWithoutFields(reportId) > 0) {
+            throw new BiException(HttpStatus.BAD_REQUEST, "BI_CONFIG_INVALID", "每个路由至少需要配置一个结果字段");
+        }
     }
 }

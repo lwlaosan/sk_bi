@@ -12,6 +12,8 @@ import com.ruoyi.bi.report.ReportRepository;
 import com.ruoyi.bi.report.ReportRuntimeCache;
 import com.ruoyi.bi.report.ReportStatus;
 import com.ruoyi.bi.security.CurrentUser;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -43,17 +45,22 @@ public class RuntimeReportService {
     private final QueryConcurrency concurrency; private final CurrentUser user; private final ObjectMapper mapper;
     private final BiProperties properties;
     private final RuntimeAuditRepository audit;
+    private final MeterRegistry metrics;
 
     public RuntimeReportService(ReportRepository reports, ReportAccess access, ReportRuntimeCache cache,
                                 DatasourceService datasources, ProcedureParameterBinder binder,
                                 QueryConcurrency concurrency, CurrentUser user, ObjectMapper mapper, BiProperties properties,
-                                RuntimeAuditRepository audit) {
+                                RuntimeAuditRepository audit, MeterRegistry metrics) {
         this.reports=reports; this.access=access; this.cache=cache; this.datasources=datasources; this.binder=binder;
-        this.concurrency=concurrency; this.user=user; this.mapper=mapper; this.properties=properties; this.audit=audit;
+        this.concurrency=concurrency; this.user=user; this.mapper=mapper; this.properties=properties; this.audit=audit;this.metrics=metrics;
     }
 
     public ObjectNode configuration(String uuid) {
-        Loaded loaded = load(uuid); ObjectNode config = loaded.snapshot(); ObjectNode result = mapper.createObjectNode();
+        return configuration(uuid, false);
+    }
+
+    ObjectNode configuration(String uuid, boolean preview) {
+        Loaded loaded = load(uuid, preview); ObjectNode config = loaded.snapshot(); ObjectNode result = mapper.createObjectNode();
         result.put("uuid", uuid); result.put("name", loaded.head().name()); result.put("configVersion", loaded.head().version());
         result.put("maxRows", loaded.head().maxRows());
         ArrayNode controls = result.putArray("controls");
@@ -76,7 +83,7 @@ public class RuntimeReportService {
         });
         JsonNode insight=config.path("insight");
         ObjectNode publicInsight=result.putObject("insight");
-        publicInsight.put("enabled",insight.path("enabled").asBoolean(false));
+        publicInsight.put("enabled",!preview && insight.path("enabled").asBoolean(false));
         publicInsight.put("title",insight.path("title").asText("智能洞察"));
         publicInsight.put("position",insight.path("position").asText("HEADER"));
         return result;
@@ -97,7 +104,11 @@ public class RuntimeReportService {
     }
 
     public RuntimeDtos.OptionResult options(String uuid, String controlKey) {
-        Loaded loaded = load(uuid);
+        return options(uuid, controlKey, false);
+    }
+
+    RuntimeDtos.OptionResult options(String uuid, String controlKey, boolean preview) {
+        Loaded loaded = load(uuid, preview);
         RuntimeDtos.OptionResult cached=cache.getOption(uuid,controlKey,user.id(),RuntimeDtos.OptionResult.class);if(cached!=null)return cached;
         JsonNode control = find(loaded.snapshot().path("controls"), "controlKey", controlKey, "BI_REQUEST_INVALID", "控件不存在");
         String source = control.path("optionSource").asText();
@@ -113,7 +124,7 @@ public class RuntimeReportService {
         boolean bindUser = sql.contains(":currentUserId");
         String jdbcSql = sql.replace(":currentUserId", "?");
         try (QueryConcurrency.Permit ignored = concurrency.acquire(user.id(), datasourceId);
-             Connection connection = datasources.openForRuntime(datasourceId);
+             Connection connection = datasources.openForOptionSql(datasourceId);
              var statement = connection.prepareStatement(jdbcSql)) {
             statement.setQueryTimeout(properties.option().timeoutSeconds());
             statement.setMaxRows(properties.option().maxRows() + 1); if (bindUser) statement.setLong(1, user.id());
@@ -131,7 +142,11 @@ public class RuntimeReportService {
     }
 
     public RuntimeDtos.QueryResult query(String uuid, String componentKey, RuntimeDtos.QueryRequest request, String traceId) {
-        long started = System.nanoTime(); Loaded loaded = load(uuid);
+        return query(uuid, componentKey, request, traceId, false);
+    }
+
+    RuntimeDtos.QueryResult query(String uuid, String componentKey, RuntimeDtos.QueryRequest request, String traceId, boolean preview) {
+        long started = System.nanoTime(); Loaded loaded = load(uuid, preview);
         if (request.configVersion() != loaded.head().version()) throw new BiException(HttpStatus.CONFLICT, "BI_RUNTIME_CONFIG_STALE", "运行配置已更新");
         JsonNode component = find(loaded.snapshot().path("components"), "componentKey", componentKey,
             "BI_COMPONENT_NOT_FOUND", "组件不存在");
@@ -149,6 +164,7 @@ public class RuntimeReportService {
         JsonNode drillValue = request.drill() == null || request.drill().isNull() ? mapper.nullNode() : request.drill().path("value");
         var params = binder.resolve(mappings, new ProcedureParameterBinder.Context(user.id(), region, componentKey, controls, drillField, drillValue));
         int limit = Math.min(properties.query().hardMaxRows(), loaded.head().maxRows());
+        Timer.Sample metricSample=Timer.start(metrics);
         try (QueryConcurrency.Permit ignored = concurrency.acquire(user.id(), datasourceId);
              Connection connection = datasources.openForRuntime(datasourceId);
              CallableStatement statement = connection.prepareCall(callSql(procedure, params.size()))) {
@@ -165,13 +181,36 @@ public class RuntimeReportService {
             }
             long elapsed=(System.nanoTime()-started)/1_000_000;
             audit.success(loaded.head().id(),uuid,componentKey,user.id(),datasourceId,procedure,request.requestId(),traceId,elapsed,rows.size(),truncated);
+            metricSample.stop(metrics.timer("bi.query.duration","outcome","success"));
+            metrics.counter("bi.query.total","outcome","success").increment();
+            if(truncated)metrics.counter("bi.query.truncated").increment();
             return new RuntimeDtos.QueryResult(request.requestId(), componentKey, region, publicRoute(route),
                 runtimeFields(route), List.copyOf(rows), rows.size(), truncated, limit,
                 elapsed, traceId);
-        } catch (BiException ex) { throw ex; }
+        } catch (BiException ex) {
+            audit.failure(loaded.head().id(),uuid,componentKey,user.id(),datasourceId,procedure,request.requestId(),traceId,
+                (System.nanoTime()-started)/1_000_000,ex.code());
+            metricSample.stop(metrics.timer("bi.query.duration","outcome","failed"));
+            metrics.counter("bi.query.total","outcome","failed","error",ex.code()).increment();
+            throw ex;
+        }
         catch (SQLException ex) {
             log.warn("报表查询失败 uuid={} component={} sqlState={}: {}", uuid, componentKey, ex.getSQLState(), ex.getMessage());
-            throw queryFailure(ex);
+            BiException failure=queryFailure(ex);
+            audit.failure(loaded.head().id(),uuid,componentKey,user.id(),datasourceId,procedure,request.requestId(),traceId,
+                (System.nanoTime()-started)/1_000_000,failure.code());
+            metricSample.stop(metrics.timer("bi.query.duration","outcome","failed"));
+            metrics.counter("bi.query.total","outcome","failed","error",failure.code()).increment();
+            throw failure;
+        }
+        catch (RuntimeException ex) {
+            log.error("报表查询发生未预期异常 uuid={} component={}", uuid, componentKey, ex);
+            String errorCode="BI_QUERY_FAILED";
+            audit.failure(loaded.head().id(),uuid,componentKey,user.id(),datasourceId,procedure,request.requestId(),traceId,
+                (System.nanoTime()-started)/1_000_000,errorCode);
+            metricSample.stop(metrics.timer("bi.query.duration","outcome","failed"));
+            metrics.counter("bi.query.total","outcome","failed","error",errorCode).increment();
+            throw new BiException(HttpStatus.INTERNAL_SERVER_ERROR,errorCode,"报表查询失败");
         }
     }
 
@@ -184,9 +223,13 @@ public class RuntimeReportService {
     }
 
     private Loaded load(String uuid) {
+        return load(uuid, false);
+    }
+
+    private Loaded load(String uuid, boolean preview) {
         try { UUID.fromString(uuid); } catch (Exception ex) { throw new BiException(HttpStatus.NOT_FOUND, "BI_REPORT_NOT_FOUND", "报表不存在"); }
         ReportRepository.RuntimeHead head = reports.runtimeHead(uuid); access.requireReadable(head.id(), reports);
-        if (head.status() != ReportStatus.ENABLED) throw new BiException(HttpStatus.NOT_FOUND, "BI_REPORT_NOT_FOUND", "报表不存在");
+        if (!preview && head.status() != ReportStatus.ENABLED) throw new BiException(HttpStatus.NOT_FOUND, "BI_REPORT_NOT_FOUND", "报表不存在");
         return new Loaded(head, cache.get(reports, head));
     }
 

@@ -13,8 +13,8 @@ final class QueryConcurrency {
     private final Semaphore global;
     private final int userLimit;
     private final int datasourceLimit;
-    private final ConcurrentHashMap<Long, Semaphore> users = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Long, Semaphore> datasources = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, ScopedSemaphore> users = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, ScopedSemaphore> datasources = new ConcurrentHashMap<>();
 
     QueryConcurrency(BiProperties properties) {
         global = new Semaphore(properties.query().globalConcurrency());
@@ -22,23 +22,49 @@ final class QueryConcurrency {
     }
 
     Permit acquire(long userId, long datasourceId) {
-        Semaphore user = users.computeIfAbsent(userId, key -> new Semaphore(userLimit));
-        Semaphore datasource = datasources.computeIfAbsent(datasourceId, key -> new Semaphore(datasourceLimit));
+        ScopedSemaphore user = retain(users,userId,userLimit);
+        ScopedSemaphore datasource = retain(datasources,datasourceId,datasourceLimit);
         boolean g = false, u = false, d = false;
         try {
             g = global.tryAcquire(3, TimeUnit.SECONDS);
-            u = g && user.tryAcquire(3, TimeUnit.SECONDS);
-            d = u && datasource.tryAcquire(3, TimeUnit.SECONDS);
-            if (d) return new Permit(global, user, datasource);
+            u = g && user.semaphore.tryAcquire(3, TimeUnit.SECONDS);
+            d = u && datasource.semaphore.tryAcquire(3, TimeUnit.SECONDS);
+            if (d) return new Permit(this,userId,datasourceId,user,datasource);
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
         }
-        if (u) user.release();
+        if (u) user.semaphore.release();
         if (g) global.release();
+        release(users,userId,user);
+        release(datasources,datasourceId,datasource);
         throw new BiException(HttpStatus.TOO_MANY_REQUESTS, "BI_QUERY_BUSY", "当前查询较多，等待后仍未获得执行名额，请稍后重试");
     }
 
-    record Permit(Semaphore global, Semaphore user, Semaphore datasource) implements AutoCloseable {
-        public void close() { datasource.release(); user.release(); global.release(); }
+    private static ScopedSemaphore retain(ConcurrentHashMap<Long,ScopedSemaphore> scopes,long id,int limit){
+        return scopes.compute(id,(key,current)->{ScopedSemaphore value=current==null?new ScopedSemaphore(limit):current;value.references++;return value;});
+    }
+
+    private static void release(ConcurrentHashMap<Long,ScopedSemaphore> scopes,long id,ScopedSemaphore expected){
+        scopes.compute(id,(key,current)->{
+            if(current!=expected)return current;
+            current.references--;
+            return current.references==0?null:current;
+        });
+    }
+
+    private static final class ScopedSemaphore {
+        private final Semaphore semaphore;
+        private int references;
+        private ScopedSemaphore(int limit){this.semaphore=new Semaphore(limit);}
+    }
+
+    int activeUserScopes(){return users.size();}
+    int activeDatasourceScopes(){return datasources.size();}
+
+    record Permit(QueryConcurrency owner,long userId,long datasourceId,ScopedSemaphore user,ScopedSemaphore datasource) implements AutoCloseable {
+        public void close() {
+            datasource.semaphore.release();user.semaphore.release();owner.global.release();
+            release(owner.users,userId,user);release(owner.datasources,datasourceId,datasource);
+        }
     }
 }

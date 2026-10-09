@@ -15,4 +15,13 @@ public class RuntimeAuditRepository {
             VALUES(?,?,?,?,?,?,?,?,?,?,?,'SUCCESS')
             """,reportId,uuid,component,userId,datasourceId,procedure,requestId,traceId,elapsed,rows,truncated);}catch(Exception ignored){}
     }
+
+    void failure(long reportId,String uuid,String component,long userId,long datasourceId,String procedure,
+                 String requestId,String traceId,long elapsed,String errorCode){
+        try{jdbc.update("""
+            INSERT INTO bi_query_audit(report_id,report_uuid,component_key,user_id,datasource_id,procedure_name,
+              request_id,trace_id,elapsed_ms,row_count,truncated,outcome,error_code)
+            VALUES(?,?,?,?,?,?,?,?,?,0,0,'FAILED',?)
+            """,reportId,uuid,component,userId,datasourceId,procedure,requestId,traceId,elapsed,errorCode);}catch(Exception ignored){}
+    }
 }

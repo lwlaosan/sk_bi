@@ -123,6 +123,16 @@ public class ReportRepository {
             Integer.class, reportId));
     }
 
+    public int routesWithoutFields(long reportId) {
+        return Objects.requireNonNull(jdbc.queryForObject("""
+            SELECT COUNT(*)
+              FROM bi_route r
+              JOIN bi_component c ON c.id=r.component_id
+             WHERE c.report_id=?
+               AND NOT EXISTS (SELECT 1 FROM bi_route_field f WHERE f.route_id=r.id)
+            """, Integer.class, reportId));
+    }
+
     public ActivationInfo activationInfo(long reportId) {
         return jdbc.query("""
             SELECT default_datasource_id,default_procedure_name,default_signature_hash

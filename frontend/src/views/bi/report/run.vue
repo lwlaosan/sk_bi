@@ -1,6 +1,7 @@
 <template>
   <div v-loading="loading" class="runtime-page">
-    <header class="runtime-header"><h2>{{ config?.name || 'BI 报表' }}</h2><span class="spacer"/><el-button v-if="showInsightAt('HEADER')" type="success" plain :disabled="!hasResults" :loading="insightLoading" @click="openInsight">{{ config?.insight?.title }}</el-button><el-button :disabled="!hasResults" @click="downloadAll">整报表导出</el-button><el-button @click="print">打印</el-button><el-button type="primary" :loading="querying" @click="queryAll">查询</el-button></header>
+    <el-alert v-if="isPreview" title="报表预览：展示最新已保存配置，可查询和下钻；不会启用报表。未保存的设计修改不包含在预览中。" type="info" :closable="false" class="mb12" />
+    <header class="runtime-header"><h2>{{ config?.name || 'BI 报表' }}</h2><span class="spacer"/><el-button v-if="showInsightAt('HEADER')" type="success" plain :disabled="!hasResults" :loading="insightLoading" @click="openInsight">{{ config?.insight?.title }}</el-button><el-button v-if="!isPreview" :disabled="!hasResults" @click="downloadAll">整报表导出</el-button><el-button @click="print">打印</el-button><el-button type="primary" :loading="querying" @click="queryAll">查询</el-button></header>
     <section v-if="config?.controls.length" class="control-bar">
       <div v-for="control in config.controls" :key="control.key" class="control-item"><label>{{ control.label }}<b v-if="control.required">*</b></label>
         <el-date-picker v-if="control.type==='DATE_RANGE'" v-model="values[control.key]" type="daterange" value-format="YYYY-MM-DD" />
@@ -21,11 +22,11 @@
       </article>
     </section>
     <article v-for="component in tables" :key="component.key" class="table-card">
-      <header><strong>{{ component.name }}</strong><span class="spacer"/><el-button size="small" :disabled="!states[component.key]?.result" @click="download(component.key)">导出 Excel</el-button></header>
+      <header><strong>{{ component.name }}</strong><span class="spacer"/><el-button v-if="!isPreview" size="small" :disabled="!states[component.key]?.result" @click="download(component.key)">导出 Excel</el-button></header>
       <el-breadcrumb v-if="states[component.key]?.history.length" separator="/" class="breadcrumb"><el-breadcrumb-item v-for="(item,index) in states[component.key].history" :key="index"><a @click="back(component.key,index)">{{ item.label }}</a></el-breadcrumb-item></el-breadcrumb>
       <el-alert v-if="states[component.key]?.result?.truncated" type="warning" :closable="false" title="结果已达到行数上限，分页、排序和导出均基于当前已加载数据。"/>
       <el-alert v-if="states[component.key]?.error" type="error" :closable="false" :title="states[component.key].error"/>
-      <el-table v-loading="states[component.key]?.loading" :data="pageRows(component.key)" border height="520" @sort-change="event => sort(component.key, event)" @cell-click="(row, column) => cellClick(component.key, row, column)">
+      <el-table v-loading="states[component.key]?.loading" :data="pageRows(component.key)" border height="520" :onSortChange="sortChangeHandler(component.key)" :onCellClick="cellClickHandler(component.key)">
         <el-table-column v-for="field in visibleFields(component.key)" :key="field.physicalName" :prop="field.physicalName" :label="field.displayName" :min-width="field.width || 100" :fixed="fixed(field.fixedPosition)" sortable="custom" :align="(field.alignType||'LEFT').toLowerCase() as any">
           <template #default="scope"><span :class="{drillable:!!field.drill}" :style="styleFor(scope.row,field)">{{ display(scope.row[field.physicalName],field) }}</span></template>
         </el-table-column>
@@ -33,7 +34,16 @@
       <el-pagination v-if="states[component.key]?.result" v-model:current-page="states[component.key].page" v-model:page-size="states[component.key].pageSize" layout="total, sizes, prev, pager, next" :total="states[component.key].result?.rowCount||0" :page-sizes="[20,50,100,200]"/>
     </article>
     <div v-if="showInsightAt('BOTTOM')" class="insight-bottom"><el-button type="success" :disabled="!hasResults" :loading="insightLoading" @click="openInsight">{{ config?.insight?.title }}</el-button></div>
-    <el-button v-if="showInsightAt('FLOAT_RIGHT')" class="insight-float" type="success" :disabled="!hasResults" :loading="insightLoading" @click="openInsight">{{ config?.insight?.title }}</el-button>
+    <el-tooltip v-if="showInsightAt('FLOAT_RIGHT')" :content="config?.insight?.title || '智能洞察'" placement="left">
+      <button class="insight-float insight-orb" type="button" :class="{'is-loading':insightLoading,'is-dragging':orbDragging}" :style="orbStyle" :disabled="!hasResults || insightLoading" :aria-label="config?.insight?.title || '智能洞察'" :aria-busy="insightLoading" @pointerdown="orbPointerDown" @pointermove="orbPointerMove" @pointerup="orbPointerUp" @pointercancel="orbPointerCancel" @lostpointercapture="orbPointerCancel" @click="orbClick">
+        <span class="insight-orbit" aria-hidden="true" />
+        <svg class="insight-glyph" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <path d="M16 6l2.7 7.3L26 16l-7.3 2.7L16 26l-2.7-7.3L6 16l7.3-2.7L16 6Z" fill="currentColor" />
+          <path d="M25 3l1.1 2.9L29 7l-2.9 1.1L25 11l-1.1-2.9L21 7l2.9-1.1L25 3Z" fill="currentColor" opacity=".8" />
+          <circle cx="6" cy="26" r="1.7" fill="currentColor" opacity=".75" />
+        </svg>
+      </button>
+    </el-tooltip>
     <el-drawer v-model="insightOpen" :title="config?.insight?.title || '智能洞察'" :size="insightDrawerSize">
       <el-segmented v-model="insightMode" :options="[{label:'当前洞察',value:'CURRENT'},{label:'历史记录',value:'HISTORY'}]" class="insight-switch" @change="modeChanged" />
       <template v-if="insightMode==='CURRENT'">
@@ -61,14 +71,23 @@
 
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
-import * as echarts from 'echarts'
+import { useDraggableOrb } from '@/composables/useDraggableOrb'
+import { ElMessage } from 'element-plus'
+import * as echarts from 'echarts/core'
+import { BarChart, GaugeChart, LineChart, PieChart } from 'echarts/charts'
+import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+import type { EChartsType } from 'echarts/core'
 import { saveAs } from 'file-saver'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { getRuntimeConfig,getControlOptions,queryComponent,exportComponent,exportReport,generateInsight,getInsightHistory,getInsightHistoryDetail,type RuntimeConfig,type RuntimeComponent,type RuntimeControl,type RuntimeField,type QueryResult,type DrillRequest,type InsightDataset,type InsightHistorySummary } from '@/api/bi/runtime'
 
 interface State { loading:boolean; error:string; result?:QueryResult; drill:DrillRequest|null; history:{label:string;drill:DrillRequest|null;result?:QueryResult}[]; page:number; pageSize:number; sort?:{prop:string;order:string} }
-const route=useRoute(),uuid=String(route.params.uuid),loading=ref(true),querying=ref(false),globalError=ref(''),config=ref<RuntimeConfig>(),values=reactive<Record<string,any>>({}),options=reactive<Record<string,{value:string;label:string}[]>>({}),states=reactive<Record<string,State>>({}),charts=new Map<string,echarts.ECharts>(),chartElements=new Map<string,HTMLElement>(),chartObservers=new Map<string,ResizeObserver>()
+echarts.use([BarChart,GaugeChart,LineChart,PieChart,GridComponent,LegendComponent,TooltipComponent,CanvasRenderer])
+const route=useRoute(),uuid=String(route.params.uuid),loading=ref(true),querying=ref(false),globalError=ref(''),config=ref<RuntimeConfig>(),values=reactive<Record<string,any>>({}),options=reactive<Record<string,{value:string;label:string}[]>>({}),states=reactive<Record<string,State>>({}),charts=new Map<string,EChartsType>(),chartElements=new Map<string,HTMLElement>(),chartObservers=new Map<string,ResizeObserver>()
+const isPreview=route.name==='BiReportPreview'
+const {style:orbStyle,dragging:orbDragging,pointerDown:orbPointerDown,pointerMove:orbPointerMove,pointerUp:orbPointerUp,pointerCancel:orbPointerCancel,click:orbClick}=useDraggableOrb(`bi:insight-orb:${uuid}`,openInsight)
 const insightOpen=ref(false),insightLoading=ref(false),insightContent=ref(''),insightMeta=ref(''),insightStale=ref(false),insightMode=ref<'CURRENT'|'HISTORY'>('CURRENT'),insightContext=ref<Record<string,unknown>|null>(null)
 const historyItems=ref<InsightHistorySummary[]>([]),historyLoading=ref(false),historyPage=ref(1),historyPageSize=20,historyTotal=ref(0)
 const renderedInsight=computed(()=>DOMPurify.sanitize(marked.parse(insightContent.value,{async:false}) as string))
@@ -76,21 +95,23 @@ const prettyContext=computed(()=>JSON.stringify(insightContext.value,null,2))
 const insightDrawerSize=computed(()=>window.matchMedia('(max-width: 768px)').matches?'92%':'680px')
 const upper=computed(()=>config.value?.components.filter((c:RuntimeComponent)=>c.regionType==='COMPONENT')||[]),tables=computed(()=>config.value?.components.filter((c:RuntimeComponent)=>c.regionType==='TABLE')||[])
 const hasResults=computed(()=>(Object.values(states) as State[]).some((state:State)=>!!state.result))
-async function load(){try{config.value=(await getRuntimeConfig(uuid)).data;for(const c of config.value.components)states[c.key]={loading:false,error:'',drill:null,history:[{label:'根层级',drill:null}],page:1,pageSize:50};for(const c of config.value.controls){values[c.key]=defaultValue(c.type,c.defaultValue);if(c.optionSource!=='NONE')getControlOptions(uuid,c.key).then((r:{data:{items:{value:string;label:string}[]}})=>options[c.key]=r.data.items)}if(requiredReady())await queryAll()}catch(e:any){globalError.value=e?.message||'报表加载失败'}finally{loading.value=false}}
+async function load(){try{config.value=(await getRuntimeConfig(uuid,isPreview)).data;for(const c of config.value.components)states[c.key]={loading:false,error:'',drill:null,history:[{label:'根层级',drill:null}],page:1,pageSize:50};for(const c of config.value.controls){values[c.key]=defaultValue(c.type,c.defaultValue);if(c.optionSource!=='NONE')getControlOptions(uuid,c.key,isPreview).then((r:{data:{items:{value:string;label:string}[]}})=>options[c.key]=r.data.items)}if(requiredReady())await queryAll()}catch(e:any){globalError.value=e?.message||'报表加载失败'}finally{loading.value=false}}
 function defaultValue(type:string,value:unknown){if(value!==undefined&&value!==null)return value;if(type==='MULTI_SELECT')return[];if(type.endsWith('_RANGE'))return type==='DATE_RANGE'?[]:{min:null,max:null};return null}
 function requiredReady(){return !!config.value?.controls.every((c:RuntimeControl)=>!c.required||(values[c.key]!==null&&values[c.key]!==''&&(!Array.isArray(values[c.key])||values[c.key].length>0)))}
 function controlPayload(){const out:Record<string,unknown>={};for(const c of config.value?.controls||[]){const v=values[c.key];if(v===null||v===''||v===undefined)continue;if(c.type==='DATE_RANGE')out[c.key]={start:v[0],end:v[1]};else if(c.type==='NUMBER_RANGE')out[c.key]=v;else out[c.key]={value:v}}return out}
-async function queryOne(key:string){const state=states[key];state.loading=true;state.error='';const requestId=crypto.randomUUID();try{const result=(await queryComponent(uuid,key,{configVersion:config.value!.configVersion,controls:controlPayload(),drill:state.drill,requestId})).data;if(result.requestId===requestId){state.result=result;state.history[state.history.length-1].result=result;state.page=1;insightStale.value=!!insightContent.value;await nextTick();renderChart(key)}}catch(e:any){state.error=e?.message||'查询失败'}finally{state.loading=false}}
+async function queryOne(key:string){const state=states[key];state.loading=true;state.error='';const requestId=crypto.randomUUID();try{const result=(await queryComponent(uuid,key,{configVersion:config.value!.configVersion,controls:controlPayload(),drill:state.drill,requestId},isPreview)).data;if(result.requestId===requestId){state.result=result;state.history[state.history.length-1].result=result;state.page=1;insightStale.value=!!insightContent.value;await nextTick();renderChart(key)}}catch(e:any){state.error=e?.message||'查询失败'}finally{state.loading=false}}
 async function queryAll(){if(querying.value)return;if(!requiredReady()){globalError.value='请填写必填查询条件';return}querying.value=true;globalError.value='';try{for(const component of config.value?.components||[]){states[component.key].drill=null;states[component.key].history=[{label:'根层级',drill:null}]}const all=config.value?.components||[],batchSize=window.matchMedia('(max-width: 768px)').matches?1:2;for(let i=0;i<all.length;i+=batchSize)await Promise.all(all.slice(i,i+batchSize).map((c:RuntimeComponent)=>queryOne(c.key)))}finally{querying.value=false}}
 function visibleFields(key:string){return states[key]?.result?.fields.filter((f:RuntimeField)=>f.visible)||[]}
 function sortedRows(key:string){const state=states[key],rows=[...(state?.result?.rows||[])];if(state?.sort?.prop)rows.sort((a,b)=>{const x=a[state.sort!.prop],y=b[state.sort!.prop],n=x==y?0:x==null?-1:y==null?1:(x as any)<(y as any)?-1:1;return state.sort!.order==='descending'?-n:n});return rows}
 function pageRows(key:string){const s=states[key];return sortedRows(key).slice((s.page-1)*s.pageSize,s.page*s.pageSize)}
 function sort(key:string,e:{prop:string;order:string}){states[key].sort=e?.order?e:undefined}
+function sortChangeHandler(key:string){return (event:{prop:string;order:string|null})=>sort(key,{prop:event.prop,order:event.order||''})}
 function fixed(value:string){return value==='NONE'?false:value.toLowerCase() as 'left'|'right'}
 function display(value:unknown,field:RuntimeField){if(value==null)return '';if(typeof value==='object')return JSON.stringify(value);if(field.dataType==='NUMBER'&&typeof value==='number'){const match=/\.([0#]+)/.exec(field.formatPattern||'');const digits=match?.[1].length;return new Intl.NumberFormat('zh-CN',digits===undefined?{maximumFractionDigits:6}:{minimumFractionDigits:digits,maximumFractionDigits:digits}).format(value)}return String(value)}
 function styleFor(row:Record<string,unknown>,field:RuntimeField){const raw=field.styleIndicatorField?String(row[field.styleIndicatorField]||''):'';const match=/^(#[0-9A-Fa-f]{6}),(bold|normal)$/.exec(raw);return match?{color:match[1],fontWeight:match[2]}:{}}
 async function drill(key:string,row:Record<string,unknown>,property:string){const field=visibleFields(key).find((f:RuntimeField)=>f.physicalName===property);if(!field?.drill)return;const payload=row[field.drill.payloadField];if(!payload||typeof payload!=='object')return;const request={routeCode:field.drill.targetRouteCode,field:field.drill.routeValue,value:payload as Record<string,unknown>};states[key].drill=request;states[key].history.push({label:String(row[property]??field.drill.targetRouteCode),drill:request});await queryOne(key)}
 function cellClick(key:string,row:Record<string,unknown>,column:{property:string}){return drill(key,row,column.property)}
+function cellClickHandler(key:string){return (row:Record<string,unknown>,column:{property:string})=>cellClick(key,row,column)}
 async function back(key:string,index:number){const s=states[key];s.history=s.history.slice(0,index+1);s.drill=s.history[index].drill;await queryOne(key)}
 function gridStyle(c:RuntimeComponent){const height=Math.max(220,Math.min(800,(c.layout?.h||8)*40));return {gridColumn:`span ${Math.max(1,Math.min(12,c.layout?.w||6))}`,'--component-body-height':`${height}px`}}
 function setChartRef(key:string){return (el:any)=>{if(el)chartElements.set(key,el as HTMLElement);else chartElements.delete(key)}}
@@ -124,7 +145,7 @@ function kpiValue(key:string){const r=states[key]?.result,f=r?.fields.find((x:Ru
 function showInsightAt(position:'HEADER'|'FLOAT_RIGHT'|'BOTTOM'){return !!config.value?.insight?.enabled&&config.value.insight.position===position}
 function openInsight(){insightOpen.value=true}
 function dataset(component:RuntimeComponent,result:QueryResult,scopeType:'CURRENT'|'PARENT',levelPath:string[]):InsightDataset{const fields=result.fields.filter((field:RuntimeField)=>field.visible).map((field:RuntimeField)=>({physicalName:field.physicalName,displayName:field.displayName,dataType:field.dataType}));return {componentKey:component.key,componentName:component.name,routeName:result.route.name,scopeType,levelPath,fields,rows:result.rows.map(row=>Object.fromEntries(fields.map(field=>[field.physicalName,row[field.physicalName]]))),rowCount:result.rowCount,truncated:result.truncated}}
-function insightDatasets():InsightDataset[]{return (config.value?.components||[]).flatMap(component=>{const history=states[component.key]?.history||[];return history.flatMap((level,index)=>level.result?[dataset(component,level.result,index===history.length-1?'CURRENT':'PARENT',history.slice(0,index+1).map(item=>item.label))]:[])})}
+function insightDatasets():InsightDataset[]{return (config.value?.components||[]).flatMap((component:RuntimeComponent)=>{const history=states[component.key]?.history||[];return history.flatMap((level:State['history'][number],index:number)=>level.result?[dataset(component,level.result,index===history.length-1?'CURRENT':'PARENT',history.slice(0,index+1).map((item:State['history'][number])=>item.label))]:[])})}
 async function generate(){if(!config.value||insightLoading.value)return;insightLoading.value=true;try{const requestId=crypto.randomUUID();const result=(await generateInsight(uuid,{configVersion:config.value.configVersion,controls:controlPayload(),datasets:insightDatasets(),requestId})).data;if(result.requestId===requestId){insightContent.value=result.content;insightMeta.value=`${result.generatedByName} · ${result.routeSummary} · ${result.provider}/${result.model} · ${result.inputRows} 行 · ${formatTime(result.generatedAt)}`;insightContext.value=null;insightStale.value=false;historyPage.value=1;await loadHistory()}}catch(e:any){ElMessage.error(e?.message||'洞察生成失败')}finally{insightLoading.value=false}}
 function formatTime(value:string){return new Date(value).toLocaleString('zh-CN')}
 async function modeChanged(value:string|number|boolean){if(value==='HISTORY')await loadHistory()}
@@ -139,4 +160,21 @@ onBeforeUnmount(()=>{chartObservers.forEach(observer=>observer.disconnect());cha
 
 <style scoped>
 .runtime-page{padding:18px;background:#f4f6f9;min-height:calc(100vh - 84px)}.runtime-header,.table-card>header,.component-card>header{display:flex;align-items:center;gap:12px}.runtime-header h2{margin:0}.spacer{flex:1}.control-bar{display:flex;flex-wrap:wrap;gap:16px;padding:16px;margin:16px 0;background:#fff;border-radius:6px}.control-item{min-width:220px}.control-item label{display:block;margin-bottom:7px;color:#606266}.control-item b{color:#f56c6c}.control-item :deep(.el-select),.control-item :deep(.el-input){width:220px}.range{display:flex;align-items:center;gap:6px}.component-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px;align-items:start}.component-card,.table-card{background:#fff;border-radius:6px;padding:14px;margin-bottom:14px;min-width:0}.component-body,.chart{height:var(--component-body-height,300px)}.elapsed{margin-left:auto;color:#909399}.kpi{display:flex;height:100%;align-items:center;justify-content:center;padding:0 12px;font-size:clamp(28px,3.2vw,42px);font-weight:700;white-space:nowrap;overflow:hidden}.table-card{margin-top:14px}.breadcrumb{margin:12px 0}.drillable{color:#409eff;cursor:pointer;text-decoration:underline}.mb12{margin:12px 0}.el-pagination{justify-content:flex-end;margin-top:12px}.insight-float{position:fixed;right:24px;top:50%;z-index:20;box-shadow:0 5px 18px rgba(0,0,0,.18)}.insight-bottom{display:flex;justify-content:center;padding:14px}.insight-switch{width:100%;margin-bottom:18px}.insight-content{line-height:1.75;font-size:15px;color:#303133;overflow-wrap:anywhere}.insight-content :deep(h1),.insight-content :deep(h2),.insight-content :deep(h3){margin:22px 0 12px;line-height:1.35}.insight-content :deep(p){margin:10px 0}.insight-content :deep(table){width:100%;border-collapse:collapse;display:block;overflow-x:auto}.insight-content :deep(th),.insight-content :deep(td){border:1px solid #dcdfe6;padding:8px 10px;white-space:nowrap}.insight-content :deep(th){background:#f5f7fa}.insight-content :deep(code){padding:2px 5px;background:#f5f7fa;border-radius:3px}.insight-meta{margin-top:20px;padding-top:12px;border-top:1px solid #ebeef5;color:#909399;font-size:12px}.context-collapse{margin-top:16px}.context-collapse pre{max-height:360px;overflow:auto;white-space:pre-wrap;background:#f5f7fa;padding:12px;border-radius:6px;font-size:12px}.history-list{min-height:180px}.history-item{display:flex;width:100%;flex-direction:column;gap:7px;text-align:left;border:1px solid #e4e7ed;background:#fff;border-radius:6px;padding:13px;margin-bottom:10px;cursor:pointer;color:#606266}.history-item:hover{border-color:#409eff;background:#f5f9ff}.history-item strong{color:#303133}.history-item span{font-size:12px}@media(max-width:768px){.runtime-page{padding:10px;min-height:100vh}.runtime-header{flex-wrap:wrap;gap:8px}.runtime-header h2{width:100%;font-size:20px}.runtime-header .spacer{display:none}.runtime-header .el-button{flex:1;margin-left:0}.control-bar{display:block;padding:12px;margin:10px 0}.control-item{min-width:0;width:100%;margin-bottom:12px}.control-item:last-child{margin-bottom:0}.control-item :deep(.el-select),.control-item :deep(.el-input),.control-item :deep(.el-date-editor){width:100%!important}.component-grid{display:block}.component-card{grid-column:1/-1!important;padding:12px}.component-body,.chart{height:min(var(--component-body-height,300px),360px)}.kpi{font-size:clamp(26px,10vw,38px)}.table-card{padding:12px}.table-card>header{flex-wrap:wrap}.el-pagination{justify-content:center;overflow:auto}.elapsed{font-size:12px}.insight-float{right:12px;bottom:18px;top:auto}}@media print{.runtime-header button,.control-bar,.el-pagination,.table-card>header button,.insight-float,.insight-bottom{display:none!important}.runtime-page{padding:0;background:#fff}.component-card,.table-card{break-inside:avoid;box-shadow:none}}
+</style>
+
+<style scoped>
+.insight-orb{top:auto;right:28px;bottom:28px;width:58px;height:58px;padding:0;border:1px solid rgba(139,220,255,.75);border-radius:19px;display:grid;place-items:center;isolation:isolate;color:#e6fbff;background:radial-gradient(circle at 28% 15%,#459cf7 0%,#4659cd 46%,#252a62 100%);box-shadow:0 8px 24px #3546a640,0 0 18px #47c5ff30,inset 0 1px 0 #ffffff60;cursor:pointer;transition:transform .2s,box-shadow .2s}
+.insight-orb::before{content:'';position:absolute;inset:5px;border:1px solid #b2e8ff30;border-radius:14px;pointer-events:none}
+.insight-orb{touch-action:none;user-select:none;cursor:grab}
+.insight-orb.is-dragging,.insight-orb.is-dragging:hover:not(:disabled){cursor:grabbing;transform:none}
+.insight-orbit{position:absolute;inset:-5px;border:1px solid #71c9ff45;border-top-color:#9cf1ff;border-bottom-color:#8b97ff;border-radius:22px;pointer-events:none;animation:insight-orbit 10s linear infinite}
+.insight-glyph{width:30px;height:30px;filter:drop-shadow(0 0 5px #8ceaff80)}
+.insight-orb:hover:not(:disabled){transform:translateY(-3px);box-shadow:0 12px 28px #3546a650,0 0 24px #47c5ff55,inset 0 1px 0 #ffffff70}
+.insight-orb:focus-visible{outline:3px solid #409eff;outline-offset:7px}
+.insight-orb:disabled{cursor:default;opacity:.5}
+.insight-orb.is-loading{opacity:1}.insight-orb.is-loading .insight-orbit{animation-duration:1.2s}
+@keyframes insight-orbit{to{transform:rotate(360deg)}}
+@media(max-width:768px){.insight-orb{width:52px;height:52px;right:18px;bottom:22px;border-radius:17px}}
+@media(prefers-reduced-motion:reduce){.insight-orbit{animation:none}.insight-orb{transition:none}}
+@media print{.insight-orb{display:none!important}}
 </style>

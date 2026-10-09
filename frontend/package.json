@@ -7,8 +7,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build:prod": "vite build",
-    "build:stage": "vite build --mode staging",
+    "typecheck": "vue-tsc --noEmit",
+    "build:prod": "npm run typecheck && vite build",
+    "build:stage": "npm run typecheck && vite build --mode staging",
     "preview": "vite preview"
   },
   "repository": {
@@ -43,10 +44,10 @@
     "sass-embedded": "1.97.2",
     "typescript": "5.6.3",
     "unplugin-auto-import": "0.18.6",
+    "unplugin-vue-components": "^0.27.5",
     "unplugin-vue-setup-extend-plus": "1.0.1",
     "vite": "^6.4.3",
     "vite-plugin-compression": "0.5.1",
-    "vite-plugin-svg-icons": "2.0.1",
     "vue-tsc": "2.1.10"
   },
   "overrides": {

@@ -95,6 +95,10 @@ export const constantRoutes = [
 // 动态路由，基于用户权限动态去加载
 export const dynamicRoutes = [
   {
+    path: '/bi/report-preview', component: Layout, hidden: true, permissions: ['bi:report:design'],
+    children: [{ path: 'index/:uuid', component: () => import('@/views/bi/report/run.vue'), name: 'BiReportPreview', meta: { title: '报表预览', activeMenu: '/bi/report' } }]
+  },
+  {
     path: '/bi/report-run', component: Layout, hidden: true, permissions: ['bi:report:view'],
     children: [{ path: 'index/:uuid', component: () => import('@/views/bi/report/run.vue'), name: 'BiReportRun', meta: { title: '报表运行', activeMenu: '/bi/report' } }]
   },

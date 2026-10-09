@@ -37,6 +37,19 @@ logging:
     com.ruoyi: debug
     org.springframework: warn
 
+# 运行健康检查与指标
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: ${ruoyi.name}
+
 # 用户配置
 user:
   password:

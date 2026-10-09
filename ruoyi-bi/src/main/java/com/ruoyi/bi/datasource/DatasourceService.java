@@ -50,6 +50,7 @@ public class DatasourceService {
         require(id);
         boolean changed = request.password() != null && !request.password().isBlank();
         repository.update(id, request, changed ? cipher.encrypt(request.password()) : null, changed, userId);
+        connections.invalidate(id);
         return get(id);
     }
 
@@ -76,6 +77,10 @@ public class DatasourceService {
     /** 仅供已完成报表 ACL 校验的运行引擎使用。CALL 存储过程不能使用 JDBC 只读连接。 */
     public Connection openForRuntime(long id) throws SQLException {
         return connections.open(requireEnabledInternal(id), false);
+    }
+    /** 控件选项仅允许 SELECT，连接层同时强制只读。 */
+    public Connection openForOptionSql(long id) throws SQLException {
+        return connections.open(requireEnabledInternal(id), true);
     }
     public DatasourceDtos.ProcedureMetadata parametersForRuntime(long id, String name) {
         return metadata.parameters(requireEnabledInternal(id), name);

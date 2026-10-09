@@ -44,4 +44,20 @@ class ReportServiceTest {
         assertEquals("BI_CONFIG_INVALID", error.code());
         verify(access).requireReadable(22, repository);
     }
+
+    @Test
+    void refusesActivationWhenAnyRouteHasNoResultFields() {
+        var request = new ReportDtos.StatusRequest(ReportStatus.ENABLED, 1);
+        when(repository.activationInfo(22)).thenReturn(new ReportRepository.ActivationInfo(1001, "sp_sales", "hash"));
+        when(datasources.parameters(1001, "sp_sales")).thenReturn(new DatasourceDtos.ProcedureMetadata(
+            "sp_sales", "hash", true,
+            List.of(new DatasourceDtos.ProcedureParameter(1, "p_user_id", "IN", "bigint", "bigint")), List.of()));
+        when(repository.defaultMappingCount(22)).thenReturn(1);
+        when(repository.routesWithoutFields(22)).thenReturn(1);
+
+        BiException error = assertThrows(BiException.class, () -> service.changeStatus(22, request, 9));
+
+        assertEquals("BI_CONFIG_INVALID", error.code());
+        assertEquals("每个路由至少需要配置一个结果字段", error.getMessage());
+    }
 }

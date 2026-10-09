@@ -59,7 +59,10 @@
       <el-tab-pane label="参数映射" name="mappings">
         <el-alert type="info" :closable="false" class="mb16" title="从当前默认存储过程同步参数后配置来源；p_user_id 始终由服务端当前用户注入。" />
         <div class="structure-tools"><el-button type="primary" plain icon="Refresh" :loading="syncing" @click="syncParameters">同步默认过程参数</el-button></div>
-        <el-table :data="defaultMappings" border>
+        <el-empty v-if="!defaultMappings.length" :image-size="72" description="尚未同步默认存储过程参数，报表因此无法启用">
+          <el-button type="primary" :loading="syncing" @click="syncParameters">立即同步参数</el-button>
+        </el-empty>
+        <el-table v-else :data="defaultMappings" border>
           <el-table-column prop="parameterOrdinal" label="#" width="55" />
           <el-table-column prop="parameterName" label="参数" min-width="150" />
           <el-table-column prop="mysqlDataType" label="参数类型" width="130" />
@@ -101,12 +104,20 @@
               <el-form-item v-if="component.datasourceIdOverride" label="覆盖过程"><el-select v-model="component.procedureNameOverride" filterable style="width:210px"><el-option v-for="item in overrideProcedures[component.componentKey]||[]" :key="item.procedureName" :label="item.procedureName" :value="item.procedureName"/></el-select></el-form-item>
               <el-form-item v-if="component.procedureNameOverride"><el-button type="primary" plain @click="syncComponentParameters(component)">同步覆盖参数</el-button></el-form-item>
             </el-form>
+            <el-alert v-if="component.regionType === 'TABLE' && component.routes.length === 1" class="mb16" type="info" :closable="false" show-icon
+              title="只有 ROOT 是新建报表的正常初始状态。如需下钻，请新增路由，再在上一层配置指向它的钻取边。" />
             <div class="section-title">路由层级 <el-button v-if="component.regionType === 'TABLE'" link type="primary" icon="Plus" @click="addRoute(component)">新增路由</el-button></div>
             <el-tabs type="border-card">
               <el-tab-pane v-for="(routeItem, routeIndex) in component.routes" :key="routeItem.routeCode" :label="routeItem.routeCode">
                 <el-form inline><el-form-item label="路由编码"><el-input v-model="routeItem.routeCode" :disabled="routeItem.routeCode === 'ROOT'" /></el-form-item><el-form-item label="名称"><el-input v-model="routeItem.routeName" /></el-form-item><el-form-item v-if="routeItem.routeCode !== 'ROOT'"><el-button link type="danger" @click="removeRoute(component, routeIndex)">删除路由</el-button></el-form-item></el-form>
                 <div class="section-title">结果字段映射 <span class="section-tip">物理字段 = 存储过程 SELECT 别名</span> <el-tooltip placement="top" :content="roleHelp"><el-tag class="role-help" size="small" type="info">角色说明 ?</el-tag></el-tooltip> <el-button link type="primary" icon="Plus" @click="addField(routeItem)">新增字段</el-button></div>
                 <el-table :data="routeItem.fields" size="small" border>
+                  <template #empty>
+                    <div class="mapping-empty">
+                      <div>字段不会从存储过程自动推断，因为不同参数和下钻层级可以返回不同结果集。</div>
+                      <el-button type="primary" plain icon="Plus" @click="addField(routeItem)">添加第一个字段</el-button>
+                    </div>
+                  </template>
                   <el-table-column label="物理字段" min-width="150"><template #default="{ row }"><el-input v-model="row.physicalName" /></template></el-table-column>
                   <el-table-column label="显示名" min-width="140"><template #default="{ row }"><el-input v-model="row.displayName" /></template></el-table-column>
                   <el-table-column label="类型" width="125"><template #default="{ row }"><el-select v-model="row.dataType"><el-option v-for="type in fieldTypes" :key="type" :label="type" :value="type"/></el-select></template></el-table-column>
@@ -347,5 +358,5 @@ load()
 </script>
 
 <style scoped>
-.designer{min-height:calc(100vh - 84px);background:#fff}.designer-header{height:58px;display:flex;align-items:center;gap:20px;padding:0 20px;border-bottom:1px solid #e5e7eb}.designer-header .title{flex:1;font-size:17px;font-weight:600}.designer-body{box-sizing:border-box;height:calc(100vh - 142px);padding:20px;overflow:hidden}.designer-body :deep(.el-tabs__content){overflow-y:auto;overflow-x:hidden}.form-panel{max-width:780px;padding:10px 24px}.structure-tools{margin-bottom:12px}.region-tag{margin-left:12px}.muted{margin-left:12px;color:#909399;font-weight:400}.section-title{margin:14px 0 8px;font-weight:600}.section-tip{margin-left:8px;color:#909399;font-size:12px;font-weight:400}.role-help{margin-left:8px;cursor:help}.option-code{float:right;margin-left:24px;color:#909399;font-size:12px}.expand-panel{padding:12px 24px;background:#f8fafc}.sql-hint{margin-top:6px;color:#909399;font-size:12px;line-height:1.5}.mapping-group{margin:12px 0 20px}.override-row{padding:8px;background:#f8fafc}.provider-credentials{margin-bottom:22px;padding:4px 16px 16px;background:#f8fafc;border:1px solid #ebeef5;border-radius:6px}.provider-row{display:grid;grid-template-columns:minmax(210px,1fr) minmax(240px,1.2fr) auto auto;gap:10px;align-items:center;margin:10px 0}.provider-name{display:flex;align-items:center;gap:8px}@media(max-width:900px){.provider-row{grid-template-columns:1fr}.provider-name{flex-wrap:wrap}}
+.designer{min-height:calc(100vh - 84px);background:#fff}.designer-header{height:58px;display:flex;align-items:center;gap:20px;padding:0 20px;border-bottom:1px solid #e5e7eb}.designer-header .title{flex:1;font-size:17px;font-weight:600}.designer-body{box-sizing:border-box;height:calc(100vh - 142px);padding:20px;overflow:hidden}.designer-body :deep(.el-tabs__content){overflow-y:auto;overflow-x:hidden}.form-panel{max-width:780px;padding:10px 24px}.structure-tools{margin-bottom:12px}.region-tag{margin-left:12px}.muted{margin-left:12px;color:#909399;font-weight:400}.section-title{margin:14px 0 8px;font-weight:600}.section-tip{margin-left:8px;color:#909399;font-size:12px;font-weight:400}.role-help{margin-left:8px;cursor:help}.option-code{float:right;margin-left:24px;color:#909399;font-size:12px}.expand-panel{padding:12px 24px;background:#f8fafc}.sql-hint{margin-top:6px;color:#909399;font-size:12px;line-height:1.5}.mapping-group{margin:12px 0 20px}.mapping-empty{display:flex;flex-direction:column;align-items:center;gap:12px;padding:8px 0 14px;color:#909399;line-height:1.6}.override-row{padding:8px;background:#f8fafc}.provider-credentials{margin-bottom:22px;padding:4px 16px 16px;background:#f8fafc;border:1px solid #ebeef5;border-radius:6px}.provider-row{display:grid;grid-template-columns:minmax(210px,1fr) minmax(240px,1.2fr) auto auto;gap:10px;align-items:center;margin:10px 0}.provider-name{display:flex;align-items:center;gap:8px}@media(max-width:900px){.provider-row{grid-template-columns:1fr}.provider-name{flex-wrap:wrap}}
 </style>

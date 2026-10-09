@@ -4,7 +4,7 @@ SK BI 按 `docs/bi` 中的设计文档分阶段实现，基于若依前后端分
 
 当前已完成阶段 1 基线：若依 JWT 登录与菜单权限、MySQL 8 元数据迁移、数据源凭据加密、数据源 CRUD/用户与角色 ACL、连接测试、存储过程发现与参数签名，以及数据源管理页面。
 
-第一版主功能已经按文档贯通：报表与数据源 ACL、完整聚合设计器、组件覆盖过程、参数映射、版本差异与回滚、Redis 配置热失效、静态/SQL 控件选项、强类型存储过程查询、动态表格异构钻取、多种图表、响应式手机端运行页、Excel 导出、打印样式、并发/超时/行数保护和运行审计。业务数据源支持 MySQL、SQL Server、PostgreSQL 和 Oracle，项目元数据库仍使用 MySQL。
+第一版主功能已经按文档贯通：报表与数据源 ACL、完整聚合设计器、组件覆盖过程、参数映射、版本差异与回滚、Redis 配置热失效、静态/SQL 控件选项、强类型存储过程查询、动态表格异构钻取、多种图表、响应式手机端运行页、Excel 导出、打印样式、并发/超时/行数保护和运行审计。业务数据源支持 MySQL、SQL Server 和 PostgreSQL，项目元数据库仍使用 MySQL。
 
 报表洞察支持千问与 DeepSeek：开发者可配置供应商、模型和业务提示词，运行用户按当前页面及下钻层级生成洞察。洞察正文采用安全 Markdown 渲染，每次结果连同生成用户、报表版本、层级路径和数据快照保存为历史记录。
 
@@ -30,6 +30,9 @@ export BI_META_DB_URL='jdbc:mysql://localhost:3306/sk_bi_meta?useUnicode=true&ch
 export BI_META_DB_USERNAME='sk_bi'
 export BI_META_DB_PASSWORD='replace-me'
 export BI_DATASOURCE_MASTER_KEY="$(openssl rand -base64 32)"
+export JWT_SECRET="$(openssl rand -base64 48)"
+export BI_REDIS_HOST='localhost'
+export BI_REDIS_PASSWORD='replace-with-a-strong-password'
 export DRUID_MONITOR_USERNAME='admin'
 export DRUID_MONITOR_PASSWORD='replace-with-a-strong-password'
 # 可选：启用报表洞察时至少配置其中一个
@@ -71,9 +74,18 @@ npm run dev
 执行测试：
 
 ```bash
-mvn -pl ruoyi-bi -am test
-cd frontend && npm run build:prod
+mvn test
+cd frontend
+npm audit --audit-level=high
+npm run build:prod
 ```
+
+## 运行监控
+
+- `GET /actuator/health`：负载均衡与容器可匿名使用的健康探针。
+- `GET /actuator/prometheus`：Prometheus 抓取入口，需要具备系统管理权限的 JWT。
+- BI 查询指标包括 `bi_query_total`、`bi_query_duration_seconds` 和 `bi_query_truncated_total`；业务数据源连接池同时暴露 `hikaricp_*` 指标。
+- 查询成功与失败均写入 `bi_query_audit`，失败记录包含稳定的业务错误码，便于按报表、组件和数据源定位问题。
 
 ## 安全与贡献
 

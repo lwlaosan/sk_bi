@@ -31,12 +31,18 @@ export default defineConfig(({ mode, command }) => {
       sourcemap: command === 'build' ? false : 'inline',
       outDir: 'dist',
       assetsDir: 'assets',
-      chunkSizeWarningLimit: 2000,
+      chunkSizeWarningLimit: 600,
       rollupOptions: {
         output: {
           chunkFileNames: 'static/js/[name]-[hash].js',
           entryFileNames: 'static/js/[name]-[hash].js',
-          assetFileNames: 'static/[ext]/[name]-[hash].[ext]'
+          assetFileNames: 'static/[ext]/[name]-[hash].[ext]',
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined
+            if (id.includes('/echarts/') || id.includes('/zrender/')) return 'vendor-echarts'
+            if (id.includes('/quill/') || id.includes('/@vueup/vue-quill/') || id.includes('/marked/') || id.includes('/dompurify/')) return 'vendor-editor'
+            return undefined
+          }
         }
       }
     },
@@ -77,4 +83,3 @@ export default defineConfig(({ mode, command }) => {
     }
   }
 })
-

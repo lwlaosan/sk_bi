@@ -36,13 +36,15 @@
       <el-table-column label="状态" width="90" align="center">
         <template #default="{ row }">
           <el-switch :model-value="row.status" active-value="ENABLED" inactive-value="DISABLED"
+            :loading="statusChanging.includes(row.id)" :disabled="statusChanging.includes(row.id)"
             v-hasPermi="['bi:report:design']" @change="toggleStatus(row, $event)" />
         </template>
       </el-table-column>
       <el-table-column label="更新时间" prop="updatedAt" width="190" />
-      <el-table-column label="操作" width="230" fixed="right">
+      <el-table-column label="操作" width="300" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" icon="Edit" v-hasPermi="['bi:report:design']" @click="openDesigner(row)">设计</el-button>
+          <el-button link type="primary" icon="View" v-hasPermi="['bi:report:design']" @click="openPreview(row)">预览</el-button>
           <el-button link type="primary" icon="CopyDocument" v-hasPermi="['bi:report:create']" @click="copy(row)">复制</el-button>
           <el-button v-if="row.status==='ENABLED'" link type="success" icon="View" v-hasPermi="['bi:report:view']" @click="openRuntime(row)">运行</el-button>
           <el-button link type="danger" icon="Delete" v-hasPermi="['bi:report:design']" @click="remove(row)">删除</el-button>
@@ -99,6 +101,7 @@ const createRef = ref<{ validate: () => Promise<boolean> }>()
 const datasourceOptions = ref<DatasourceView[]>([])
 const procedureOptions = ref<ProcedureSummary[]>([])
 const proceduresLoading = ref(false)
+const statusChanging = ref<string[]>([])
 
 const blankForm = (): ReportCreate => ({ reportName: '', description: '', defaultDatasourceId: '',
   defaultProcedureName: '', maxRows: 50000, timeoutSeconds: 60 })
@@ -152,11 +155,26 @@ async function submitCreate() {
 async function toggleStatus(row: ReportSummary, value: unknown) {
   const status = value as ReportStatus
   if (status === row.status) return
+  statusChanging.value.push(row.id)
   try {
     await changeReportStatus(row.id, status, row.currentConfigVersion)
     ElMessage.success(status === 'ENABLED' ? '报表已启用' : '报表已停用')
     await load()
-  } catch { /* 请求拦截器已展示错误，保留原状态 */ }
+  } catch (error: any) {
+    if (status === 'ENABLED') {
+      const reason = error?.response?.data?.message || '报表配置尚未通过启用校验'
+      try {
+        await ElMessageBox.confirm(
+          `${reason}。\n\n请先在报表设计中同步并配置存储过程参数，至少添加一个结果字段，然后保存配置。`,
+          '暂时无法启用',
+          { type: 'warning', confirmButtonText: '去设计', cancelButtonText: '留在列表', distinguishCancelAndClose: true }
+        )
+        openDesigner(row)
+      } catch { /* 用户选择留在列表 */ }
+    }
+  } finally {
+    statusChanging.value = statusChanging.value.filter((id: string) => id !== row.id)
+  }
 }
 
 async function remove(row: ReportSummary) {
@@ -172,6 +190,7 @@ async function copyUuid(uuid: string) {
   ElMessage.success('UUID 已复制')
 }
 function openDesigner(row: ReportSummary) { router.push(`/bi/report-design/index/${row.id}`) }
+function openPreview(row: ReportSummary) { router.push(`/bi/report-preview/index/${row.reportUuid}`) }
 function openRuntime(row: ReportSummary) { router.push(`/bi/report-run/index/${row.reportUuid}`) }
 
 load()
